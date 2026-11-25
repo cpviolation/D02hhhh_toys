@@ -245,3 +245,23 @@ def test_cp_symmetric(events):
     pulls = (eff - eff_bar) / error
     assert abs(pulls.mean()) < 4 / np.sqrt(len(pulls))
     assert pulls.std() < 1.5
+
+
+def test_offline_ipchi2_track_count(events):
+    """Offline: at least n_tracks daughters above the IPchi2 cut; 0 is no cut, 4 is all."""
+    tau = np.random.default_rng(13).exponential(size=len(events))
+    base = AcceptanceConfig()
+    assert base.offline.n_tracks == 0
+    lab = LHCbAcceptance(base).lab_event(events, tau, np.random.default_rng(14))
+    above = lab.reconstructed & (lab.ipchi2 > 4)
+    all_reco = lab.reconstructed.all(axis=1)
+    for n in range(5):
+        acc = LHCbAcceptance(base.with_overrides({"offline.n_tracks": n}))
+        np.testing.assert_array_equal(
+            acc.offline(lab), all_reco & (above.sum(axis=1) >= n)
+        )
+    np.testing.assert_array_equal(LHCbAcceptance(base).offline(lab), all_reco)
+    four = LHCbAcceptance(base.with_overrides({"offline.n_tracks": 4})).offline(lab)
+    np.testing.assert_array_equal(four, above.all(axis=1))
+    with pytest.raises(ValueError, match="n_tracks"):
+        base.with_overrides({"offline.n_tracks": 5})

@@ -71,6 +71,22 @@ def main() -> None:
             f"{label:40s} overall {100 * accepted[label].mean():.2f}%  "
             f"max {100 * np.nanmax(eff):.2f}% at tau = {CENTRES[np.nanargmax(eff)]:.2f}"
         )
+    # offline IPchi2 requirement on N daughters, with HLT1 (a)
+    config_a = AcceptanceConfig.from_yaml(CONFIGS / "hlt1_a.yaml")
+    for n in (1, 2, 4):
+        acc = LHCbAcceptance(config_a.with_overrides({"offline.n_tracks": n}))
+        passed = acc.accept(events, tau, np.random.default_rng(3))
+        eff, _ = binned_efficiency(tau, passed, EDGES)
+        half = CENTRES[np.argmax(eff >= 0.5 * eff[-1])]
+        print(
+            f"HLT1 (a), offline IPchi2 > 4 on >= {n} daughters: overall {100 * passed.mean():.2f}%"
+            f"  last bin {100 * eff[-1]:.2f}%  half of it at tau = {half:.2f}"
+        )
+    eff, _ = binned_efficiency(tau, accepted[next(iter(HLT1))], EDGES)
+    print(
+        f"HLT1 (a), no offline IPchi2 cut: half of the last bin at tau = "
+        f"{CENTRES[np.argmax(eff >= 0.5 * eff[-1])]:.2f}"
+    )
     style_axes(ax)
     ax.set_xlabel("decay time τ = t/τ(D⁰)", color=TEXT)
     ax.set_ylabel("acceptance [%]", color=TEXT)

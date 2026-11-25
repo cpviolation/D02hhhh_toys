@@ -18,8 +18,11 @@ The emulator acts on events in the :math:`D^0` rest frame and their decay times
 4. **Tracks:** each daughter must satisfy the :math:`\eta`, :math:`p` and :math:`p_T`
    requirements, and is reconstructed with probability :math:`\varepsilon(p) =
    \varepsilon_\max (1 - e^{-(p - p_\mathrm{thr})/w})` (0 below :math:`p_\mathrm{thr}`).
-5. **Selection:** :math:`\mathrm{IP}\chi^2` above a cut for all four daughters, and the
-   HLT1 decision. HLT1 is a list of lines, each requiring at least :math:`N` daughters
+5. **Selection:** all four daughters reconstructed; offline, at least
+   :math:`N_\mathrm{off}` daughters with :math:`\mathrm{IP}\chi^2` above a cut
+   (:class:`Offline`; :math:`N_\mathrm{off} = 0` by default, so that the
+   :math:`\mathrm{IP}\chi^2` requirement enters only through the 1- or 2-track HLT1
+   lines; 4 is a cut on every daughter); and the HLT1 decision. HLT1 is a list of lines, each requiring at least :math:`N` daughters
    with :math:`p_T` and :math:`\mathrm{IP}\chi^2` above cuts. They are combined with
    ``mode = "any"`` (the event passes if any line fires, as in the real HLT1) or
    ``mode = "mixture"`` (each event is assigned one line at random with ``fractions``,
@@ -79,6 +82,17 @@ class TrackingEfficiency:
 
 
 @dataclass
+class Offline:
+    n_tracks: int = 0  # daughters required with IPchi2 > ipchi2_min (0: no cut, 4: all)
+    ipchi2_min: float = 4.0
+
+    def __post_init__(self) -> None:
+        if not 0 <= self.n_tracks <= 4:
+            msg = f"offline.n_tracks must be between 0 and 4, got {self.n_tracks}"
+            raise ValueError(msg)
+
+
+@dataclass
 class HLT1Line:
     name: str
     n_tracks: int
@@ -122,7 +136,7 @@ class AcceptanceConfig:
     ip_resolution: IPResolution = field(default_factory=IPResolution)
     tracks: TrackRequirements = field(default_factory=TrackRequirements)
     tracking: TrackingEfficiency = field(default_factory=TrackingEfficiency)
-    offline_ipchi2_min: float = 4.0
+    offline: Offline = field(default_factory=Offline)
     hlt1: HLT1 = field(default_factory=HLT1)
     ctau_um: float = D0_CTAU_UM
     d0_mass: float = D0_MASS
@@ -345,13 +359,13 @@ class LHCbAcceptance:
         return lines[np.arange(len(lines)), chosen]
 
     def offline(self, lab: LabEvent) -> np.ndarray:
-        return np.all(
-            lab.reconstructed & (lab.ipchi2 > self.config.offline_ipchi2_min), axis=1
-        )
+        cut = self.config.offline
+        passed = (lab.reconstructed & (lab.ipchi2 > cut.ipchi2_min)).sum(axis=1)
+        return lab.reconstructed.all(axis=1) & (passed >= cut.n_tracks)
 
     def accept(
         self, events: np.ndarray, tau: np.ndarray, rng: np.random.Generator
     ) -> np.ndarray:
-        """Whether each event passes: all daughters reconstructed, offline IPχ² cuts and HLT1."""
+        """Whether each event passes: all daughters reconstructed, the offline IPχ² requirement and HLT1."""
         lab = self.lab_event(events, tau, rng)
         return self.offline(lab) & self.hlt1(lab, rng)

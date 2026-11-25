@@ -20,7 +20,9 @@ tracking:  # ε(p) = plateau · (1 − exp(−(p − threshold)/width))
   plateau: 0.97
   threshold: 1.5
   width: 1.5
-offline_ipchi2_min: 4.0
+offline:  # at least n_tracks daughters with IPχ² > ipchi2_min (0: no cut, 4: all four)
+  n_tracks: 0
+  ipchi2_min: 4.0
 hlt1:  # (a) TrackMVA-like single-track line
   mode: any
   lines:
