@@ -1,0 +1,7 @@
+# HLT1 fires if the one-track or the two-track line fires
+base: base.yaml
+hlt1:
+  mode: any
+  lines:
+    - {kind: one_track, name: one_track, pt_wall: 1.5, k: 2.0, ipchi2_floor: 8.0}
+    - {kind: two_track, name: two_track}

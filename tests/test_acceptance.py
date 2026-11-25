@@ -192,7 +192,10 @@ def test_hlt1_validation():
 def test_configs():
     base = AcceptanceConfig.from_yaml(CONFIGS / "base.yaml")
     assert base == AcceptanceConfig()
-    assert [line.kind for line in base.hlt1.lines] == ["one_track", "two_track"]
+    assert [line.kind for line in base.hlt1.lines] == ["two_track"]
+    assert base.decay_vertex.rho_max_um == 3500.0
+    either = AcceptanceConfig.from_yaml(CONFIGS / "hlt1_one_or_two_track.yaml")
+    assert either.hlt1.lines == [OneTrackLine(), TwoTrackLine()]
     one = AcceptanceConfig.from_yaml(CONFIGS / "hlt1_one_track.yaml")
     assert one.hlt1.lines == [OneTrackLine()]
     two = AcceptanceConfig.from_yaml(CONFIGS / "hlt1_two_track.yaml")
@@ -200,7 +203,7 @@ def test_configs():
     assert two.ip_resolution == base.ip_resolution
     mixture = AcceptanceConfig.from_yaml(CONFIGS / "hlt1_mixture.yaml")
     assert mixture.hlt1.mode == "mixture"
-    assert mixture.hlt1.lines == base.hlt1.lines
+    assert mixture.hlt1.lines == either.hlt1.lines
     assert AcceptanceConfig.from_yaml(CONFIGS / "hlt1_box_a.yaml").hlt1.lines == [
         LINE_A
     ]
@@ -320,3 +323,24 @@ def test_offline_ipchi2_track_count(events):
     np.testing.assert_array_equal(four, above.all(axis=1))
     with pytest.raises(ValueError, match="n_tracks"):
         base.with_overrides({"offline.n_tracks": 5})
+
+
+def test_decay_vertex_inside_rf_foil(events):
+    """The decay vertex must be within 3.5 mm of the beam line: rho = (pT/m) c tau_D0 tau."""
+    acc = LHCbAcceptance()
+    tau = np.random.default_rng(17).exponential(size=len(events)) * 5
+    lab = acc.lab_event(events, tau, np.random.default_rng(18))
+    rho = np.hypot(lab.flight[:, 0], lab.flight[:, 1])
+    pt_d = np.hypot(lab.d_momentum[:, 0], lab.d_momentum[:, 1])
+    np.testing.assert_allclose(rho, pt_d / 1.86484 * 122.9 * tau)
+    np.testing.assert_array_equal(acc.inside_foil(lab), rho < 3500)
+    assert 0 < np.mean(~acc.inside_foil(lab)) < 0.5
+    no_cut = LHCbAcceptance(
+        acc.config.with_overrides({"decay_vertex.rho_max_um": None})
+    )
+    assert no_cut.inside_foil(lab).all()
+    # accept() applies it
+    far = np.full(len(events), 200.0)  # rho > 3.5 mm unless pT(D0) < 0.27 GeV
+    lab_far = acc.lab_event(events, far, np.random.default_rng(19))
+    expected = acc.inside_foil(lab_far).mean()
+    assert acc.accept(events, far, np.random.default_rng(19)).mean() <= expected

@@ -22,7 +22,11 @@ The emulator acts on events in the :math:`D^0` rest frame and their decay times
    :math:`N_\mathrm{off}` daughters with :math:`\mathrm{IP}\chi^2` above a cut
    (:class:`Offline`; :math:`N_\mathrm{off} = 0` by default, so that the
    :math:`\mathrm{IP}\chi^2` requirement enters only through the 1- or 2-track HLT1
-   lines; 4 is a cut on every daughter); and the HLT1 decision.
+   lines; 4 is a cut on every daughter); the decay vertex inside the VELO RF foil,
+   at a radial distance :math:`\rho = \sqrt{L_x^2 + L_y^2}` from the beam line below
+   :math:`\rho_\max` (:class:`DecayVertex`, 3.5 mm); and the HLT1 decision. The
+   radial cut makes the acceptance fall at large decay times, earlier for a harder
+   :math:`D^0`, since :math:`\rho = (p_T/m)\,c\tau_{D^0}\,\tau`.
 
 **HLT1** is a list of lines, combined with ``mode = "any"`` (the event passes if any
 line fires, as in the real HLT1) or ``mode = "mixture"`` (each event is assigned one line
@@ -122,6 +126,13 @@ class Offline:
         if not 0 <= self.n_tracks <= 4:
             msg = f"offline.n_tracks must be between 0 and 4, got {self.n_tracks}"
             raise ValueError(msg)
+
+
+@dataclass
+class DecayVertex:
+    """Fiducial region of the decay vertex: radial distance from the beam line below ``rho_max_um`` (None: no cut)."""
+
+    rho_max_um: float | None = 3500.0  # inner radius of the VELO RF foil
 
 
 @dataclass
@@ -284,9 +295,7 @@ def make_line(values: dict[str, Any] | HLT1Line) -> HLT1Line:
 
 @dataclass
 class HLT1:
-    lines: list[HLT1Line] = field(
-        default_factory=lambda: [OneTrackLine(), TwoTrackLine()]
-    )
+    lines: list[HLT1Line] = field(default_factory=lambda: [TwoTrackLine()])
     mode: str = "any"  # "any" or "mixture"
     fractions: list[float] | None = None  # for "mixture", one per line
 
@@ -316,6 +325,7 @@ class AcceptanceConfig:
     tracks: TrackRequirements = field(default_factory=TrackRequirements)
     tracking: TrackingEfficiency = field(default_factory=TrackingEfficiency)
     offline: Offline = field(default_factory=Offline)
+    decay_vertex: DecayVertex = field(default_factory=DecayVertex)
     vertex_resolution: VertexResolution = field(default_factory=VertexResolution)
     hlt1: HLT1 = field(default_factory=HLT1)
     ctau_um: float = D0_CTAU_UM
@@ -538,9 +548,16 @@ class LHCbAcceptance:
         passed = (lab.reconstructed & (lab.ipchi2 > cut.ipchi2_min)).sum(axis=1)
         return lab.reconstructed.all(axis=1) & (passed >= cut.n_tracks)
 
+    def inside_foil(self, lab: LabEvent) -> np.ndarray:
+        """Whether the (true) decay vertex is within ``decay_vertex.rho_max_um`` of the beam line."""
+        rho_max = self.config.decay_vertex.rho_max_um
+        if rho_max is None:
+            return np.ones(len(lab.flight), dtype=bool)
+        return np.hypot(lab.flight[:, 0], lab.flight[:, 1]) < rho_max
+
     def accept(
         self, events: np.ndarray, tau: np.ndarray, rng: np.random.Generator
     ) -> np.ndarray:
-        """Whether each event passes: all daughters reconstructed, the offline IPχ² requirement and HLT1."""
+        """Whether each event passes: all daughters reconstructed, the offline IPχ² requirement, the decay vertex inside the foil and HLT1."""
         lab = self.lab_event(events, tau, rng)
-        return self.offline(lab) & self.hlt1(lab, rng)
+        return self.offline(lab) & self.inside_foil(lab) & self.hlt1(lab, rng)

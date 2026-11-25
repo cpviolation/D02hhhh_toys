@@ -23,17 +23,14 @@ tracking:  # ε(p) = plateau · (1 − exp(−(p − threshold)/width))
 offline:  # at least n_tracks daughters with IPχ² > ipchi2_min (0: no cut, 4: all four)
   n_tracks: 0
   ipchi2_min: 4.0
+decay_vertex:  # decay vertex inside the VELO RF foil (rho_max_um: null for no cut)
+  rho_max_um: 3500.0
 vertex_resolution:  # flight-distance resolution (PV and decay vertex combined), µm
   sigma_xy_um: 20.0
   sigma_z_um: 100.0
-hlt1:  # one-track OR two-track line, as in data taking
+hlt1:  # two-track line (default); hlt1_one_or_two_track.yaml adds the one-track line
   mode: any
   lines:
-    - kind: one_track  # ln(IPχ²/ipchi2_floor) > k/(pT − pt_wall)
-      name: one_track
-      pt_wall: 1.5
-      k: 2.0
-      ipchi2_floor: 8.0
     - kind: two_track  # pair preselection, then a linear score > score_min
       name: two_track
       track_pt_min: 0.2
