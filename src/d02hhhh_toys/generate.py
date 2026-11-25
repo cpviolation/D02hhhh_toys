@@ -31,6 +31,12 @@ Two steps:
    so :math:`c` is the maximum of the right-hand side on :math:`[0, \tau_\mathrm{max})`.
    It is exact, not estimated, and close to 2, which makes the efficiency about 50%.
 
+3. An optional acceptance (:class:`.acceptance.LHCbAcceptance`) is applied to each
+   candidate after its kinematics, CP-conjugation choice and decay time are drawn, and
+   before its amplitudes are evaluated. The accept-reject steps are independent factors
+   of the target density, so their order does not matter, and this order needs about
+   :math:`1/\varepsilon` times fewer amplitude evaluations.
+
 :math:`D^0` and :math:`\bar{D}^0` samples are generated independently, each with its
 own seed.
 """
@@ -48,6 +54,7 @@ from d02hhhh_toys.model import cp_conjugate, from_sample
 from d02hhhh_toys.timeevolution import D0, D0BAR, MixingParameters, rate, time_functions
 
 if TYPE_CHECKING:
+    from d02hhhh_toys.acceptance import LHCbAcceptance
     from d02hhhh_toys.model import AmplitudeModel
 
 
@@ -145,6 +152,16 @@ class AmplitudeSampler:
         weights = np.abs(amplitude) ** 2 / self.domain.density_ratio(sample)
         return events, weights, components
 
+    def check(self, weights: np.ndarray) -> None:
+        """Raise :class:`MaximumExceededError` if a weight is above the maximum."""
+        if len(weights) and weights.max() > self.maximum:
+            msg = (
+                f"|A|^2/r = {weights.max():.4g} exceeds the maximum {self.maximum:.4g}"
+                f" (estimated {self.estimated_maximum:.4g} x safety {self.safety}):"
+                " increase the safety factor or the estimate sample"
+            )
+            raise MaximumExceededError(msg)
+
     def generate(
         self, size: int, seed: int | np.random.SeedSequence
     ) -> AmplitudeSample:
@@ -153,13 +170,7 @@ class AmplitudeSampler:
         count = 0
         while count < size:
             events, weights, components = self._candidates(self.bunch_size, rng)
-            if weights.max() > self.maximum:
-                msg = (
-                    f"|A|^2/r = {weights.max():.4g} exceeds the maximum {self.maximum:.4g}"
-                    f" (estimated {self.estimated_maximum:.4g} x safety {self.safety}):"
-                    " increase the safety factor or the estimate sample"
-                )
-                raise MaximumExceededError(msg)
+            self.check(weights)
             keep = rng(size=len(weights), max_value=self.maximum) < weights
             if keep.any():
                 conjugates = self.model.conjugate_components(
@@ -228,18 +239,59 @@ class MixingGenerator:
         return -np.log1p(-u * -np.expm1(-self.tau_max))
 
     def _propose(
-        self, n: int, seed: np.random.SeedSequence, rng: np.random.Generator
+        self,
+        n: int,
+        rng_domain: NumpyUniformRNG,
+        rng: np.random.Generator,
+        acceptance: LHCbAcceptance | None = None,
     ) -> tuple[AmplitudeSample, np.ndarray]:
-        """``n`` events of the proposal: half |A|^2, half CP-conjugated |A|^2, with e^-tau."""
-        candidates = self.sampler.generate(n, seed)
+        """Proposal events from ``n`` phase-space candidates (fewer are returned).
+
+        Half of the candidates are CP-conjugated, all get a decay time from
+        :math:`e^{-\\tau}`, the ``acceptance`` (if any) is applied to the final events,
+        and only then are the amplitudes evaluated, for the accept-reject on
+        :math:`|A_f(p)|^2/r(p)`. The accept-reject steps are independent factors of the
+        target density, so their order does not matter; this one evaluates the
+        amplitudes only for accepted events.
+        """
+        sampler = self.sampler
+        sample = sampler.domain.generate(n, rng_domain)
+        p = from_sample(sample)
+        r = sampler.domain.density_ratio(sample)
         conjugate = rng.uniform(size=n) < 0.5
-        candidates = AmplitudeSample.concatenate(
-            [
-                candidates.select(~conjugate),
-                candidates.select(conjugate).conjugated(),
-            ]
-        ).select(rng.permutation(n))
-        return candidates, self._decay_times(n, rng)
+        tau = self._decay_times(n, rng)
+        q = np.where(conjugate[:, None, None], cp_conjugate(p), p)
+        if acceptance is not None:
+            keep = acceptance.accept(q, tau, rng)
+            p, r, conjugate, tau, q = (
+                p[keep],
+                r[keep],
+                conjugate[keep],
+                tau[keep],
+                q[keep],
+            )
+        components = sampler.model.component_amplitudes(p)
+        weights = np.abs(components @ sampler.model.couplings) ** 2 / r
+        sampler.check(weights)
+        keep = rng.uniform(size=len(weights)) * sampler.maximum < weights
+        p, components, conjugate, tau, q = (
+            p[keep],
+            components[keep],
+            conjugate[keep],
+            tau[keep],
+            q[keep],
+        )
+        conjugates = sampler.model.conjugate_components(p, components)
+        # at q = pbar the roles of A_k(p) and A_k(pbar) are swapped
+        flip = conjugate[:, None]
+        return (
+            AmplitudeSample(
+                q,
+                np.where(flip, conjugates, components),
+                np.where(flip, components, conjugates),
+            ),
+            tau,
+        )
 
     def _amplitudes(self, sample: AmplitudeSample) -> tuple[np.ndarray, np.ndarray]:
         couplings = self.sampler.model.couplings
@@ -260,21 +312,38 @@ class MixingGenerator:
             else None,
         )
 
+    def _rngs(
+        self, seed: int | np.random.SeedSequence
+    ) -> tuple[NumpyUniformRNG, np.random.Generator]:
+        seed_domain, seed_rng = _seeds(seed, 2)
+        return NumpyUniformRNG(seed=seed_domain), np.random.default_rng(seed_rng)
+
     def proposal(
         self,
         size: int,
         seed: int | np.random.SeedSequence,
         *,
+        acceptance: LHCbAcceptance | None = None,
         keep_components: bool = False,
     ) -> ToySample:
-        r"""Events of the proposal :math:`q`, without the mixing accept-reject (``tag = 0``).
+        r"""``size`` events of the proposal :math:`q` (times the ``acceptance``), without the mixing accept-reject (``tag = 0``).
 
         With weights :math:`2/(|A_f|^2 + |\bar{A}_f|^2)` they are a normalisation sample of
-        either tag (:class:`.fit.RateSample`).
+        either tag (:func:`.normalisation.normalisation_sample`).
         """
-        seed_sampler, seed_rng = _seeds(seed, 2)
-        rng = np.random.default_rng(seed_rng)
-        sample, tau = self._propose(size, np.random.SeedSequence(seed_sampler), rng)
+        rng_domain, rng = self._rngs(seed)
+        parts: list[tuple[AmplitudeSample, np.ndarray]] = []
+        count = 0
+        while count < size:
+            sample, tau = self._propose(
+                self.sampler.bunch_size, rng_domain, rng, acceptance
+            )
+            parts.append((sample, tau))
+            count += len(tau)
+        sample = AmplitudeSample.concatenate([s for s, _ in parts]).select(
+            slice(0, size)
+        )
+        tau = np.concatenate([t for _, t in parts])[:size]
         return self._toy(0, sample, tau, keep_components)
 
     def generate(
@@ -283,31 +352,31 @@ class MixingGenerator:
         size: int,
         seed: int | np.random.SeedSequence,
         *,
+        acceptance: LHCbAcceptance | None = None,
         keep_components: bool = False,
     ) -> ToySample:
-        """``size`` events of initial flavour ``tag`` (``+1`` for D0, ``-1`` for D0bar)."""
+        """``size`` events of initial flavour ``tag`` (``+1`` for D0, ``-1`` for D0bar), after the ``acceptance`` if given."""
         if tag not in (D0, D0BAR):
             msg = f"tag must be {D0} or {D0BAR}, got {tag}"
             raise ValueError(msg)
-        seed_sampler, seed_rng = _seeds(seed, 2)
-        sequence = np.random.SeedSequence(seed_sampler)
-        rng = np.random.default_rng(seed_rng)
+        rng_domain, rng = self._rngs(seed)
         bound = self.bound[tag]
         accepted: list[tuple[AmplitudeSample, np.ndarray]] = []
         count = 0
         while count < size:
-            n = int(2.2 * (size - count)) + 1000  # about 2 candidates per event
-            candidates, tau = self._propose(n, sequence.spawn(1)[0], rng)
+            candidates, tau = self._propose(
+                self.sampler.bunch_size, rng_domain, rng, acceptance
+            )
             a, a_bar = self._amplitudes(candidates)
             proposal = (np.abs(a) ** 2 + np.abs(a_bar) ** 2) / 2
             ratio = (
                 rate(tau, a, a_bar, self.parameters, tag, relative_to_decay=True)
                 / proposal
             )
-            if ratio.max() > bound * (1 + 1e-9):
+            if len(ratio) and ratio.max() > bound * (1 + 1e-9):
                 msg = f"Mixing weight {ratio.max():.6g} above its analytic bound {bound:.6g}"
                 raise MaximumExceededError(msg)
-            keep = rng.uniform(size=n) * bound < ratio
+            keep = rng.uniform(size=len(ratio)) * bound < ratio
             accepted.append((candidates.select(keep), tau[keep]))
             count += int(keep.sum())
         sample = AmplitudeSample.concatenate([s for s, _ in accepted]).select(

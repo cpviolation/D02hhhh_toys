@@ -47,12 +47,12 @@ Each point is pinned by the test named in brackets.
 
 ## Likelihood (`fit.py`, used by the Phase 4 closure)
 
-- The normalisation sample can carry weights w ∝ 1/g(p) for any known density g.
-  **Agreed (2026-11-25): the default normalisation sample is the generation proposal,
-  ½(|A_f|² + |Ā_f|²) e^{−τ}, with w = 2/(|A_f|² + |Ā_f|²).** This makes w|R|² nearly
-  constant, so a far smaller normalisation sample gives the same precision. In Phase 6
-  the analyst's acceptance model is applied to it by accept-reject. Flat phase space
-  (w = 1), the plan's original choice, remains available as a cross-check.
+- The normalisation sample can carry weights w ∝ 1/g(p) for any known density g. A
+  weighted sample was agreed on 2026-11-25, initially with g = the generation proposal.
+  **Phase 6 measurements favour g = the peaked phase space, with w = 1/r:** it is
+  about 15 times more efficient per amplitude evaluation, and the acceptance can be
+  applied before the amplitudes. It is the implemented default, pending confirmation;
+  see `normalisation.md`. The proposal and flat phase space remain available.
 
 ## Practical
 
