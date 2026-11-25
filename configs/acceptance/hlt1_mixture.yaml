@@ -1,0 +1,9 @@
+# Each event is triggered by one line, chosen at random with these fractions
+# (e.g. two data-taking periods with different trigger settings)
+base: base.yaml
+hlt1:
+  mode: mixture
+  fractions: [0.5, 0.5]
+  lines:
+    - {name: track_mva_like, n_tracks: 1, pt_min: 1.0, ipchi2_min: 7.4}
+    - {name: two_track_like, n_tracks: 2, pt_min: 0.5, ipchi2_min: 4.0}

@@ -1,0 +1,9 @@
+results/
+*.npz
+!tests/data/*.npz
+__pycache__/
+*.egg-info/
+.venv/
+.pytest_cache/
+.ruff_cache/
+src/d02hhhh_toys/version.py

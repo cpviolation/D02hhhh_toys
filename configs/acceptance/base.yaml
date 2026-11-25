@@ -1,0 +1,29 @@
+# LHCb-like acceptance emulator (d02hhhh_toys.acceptance).
+# PROPOSED TOY VALUES, NOT YET CONFIRMED: to be tuned on Run 3 simulation.
+# Units: GeV, µm. Other files override this one with `base: base.yaml`.
+production:  # dN/dpT ∝ pT / (1 + (pT/pt_scale)^2)^pt_power, η uniform
+  pt_scale: 2.5
+  pt_power: 3.0
+  pt_max: 30.0
+  eta_min: 2.0
+  eta_max: 5.0
+ip_resolution:  # σ_IP = scale · (a + b/pT)
+  a_um: 12.0
+  b_um_gev: 24.0
+  scale: 1.0
+tracks:
+  eta_min: 2.0
+  eta_max: 5.0
+  p_min: 2.0
+  pt_min: 0.25
+tracking:  # ε(p) = plateau · (1 − exp(−(p − threshold)/width))
+  plateau: 0.97
+  threshold: 1.5
+  width: 1.5
+offline_ipchi2_min: 4.0
+hlt1:  # (a) TrackMVA-like single-track line
+  mode: any
+  lines:
+    - {name: track_mva_like, n_tracks: 1, pt_min: 1.0, ipchi2_min: 7.4}
+ctau_um: 122.9
+d0_mass: 1.86484

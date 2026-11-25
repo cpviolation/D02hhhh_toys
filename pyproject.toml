@@ -1,0 +1,64 @@
+[project]
+name = "d02hhhh-toys"
+description = "Toy studies of acceptance biases in time-dependent D0 -> hhhh amplitude fits"
+requires-python = ">=3.12,<3.14"
+license = "BSD-3-Clause"
+authors = [{ name = "Maurizio Martinelli" }]
+dependencies = [
+    "aman-examples @ git+https://github.com/cpviolation/aman-examples@0.1.0",
+    "iminuit",
+    "numpy",
+    "pyyaml",
+]
+dynamic = ["version"]
+
+[project.optional-dependencies]
+cuda = ["aman-examples[cuda]"]
+plot = ["matplotlib"]
+
+[project.scripts]
+d02hhhh-toys = "d02hhhh_toys.cli:main"
+
+[dependency-groups]
+dev = ["pre-commit", "pytest", "pytest-xdist", "ruff", "matplotlib"]
+
+[build-system]
+requires = ["setuptools>=61.2", "setuptools_scm"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+package-dir = { "" = "src" }
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools_scm]
+fallback_version = "0.0.0"
+version_file = "src/d02hhhh_toys/version.py"
+
+[tool.pytest.ini_options]
+addopts = ["--color=yes", "--durations=5", "--import-mode=importlib", "-m", "not slow"]
+markers = ["slow: needs the full amplitude model or many events (select with '-m slow')"]
+testpaths = ["tests"]
+pythonpath = ["tests"]
+
+[tool.ruff]
+src = ["src", "tests"]
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["B", "C4", "E", "F", "I", "NPY", "PT", "RUF", "SIM", "UP", "W"]
+ignore = [
+    "E501",    # long formulae and docstrings
+    "E741",    # physics notation
+    "RUF001",  # Greek letters in strings
+    "RUF002",  # Greek letters in docstrings
+    "RUF003",  # Greek letters in comments
+]
+
+[tool.ruff.lint.isort]
+known-first-party = ["d02hhhh_toys"]
+
+[tool.uv]
+# same cut-off as aman-examples 0.1.0, so that both resolve the same versions
+exclude-newer = "2026-11-10T00:00:00Z"
