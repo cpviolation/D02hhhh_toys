@@ -1,6 +1,0 @@
-# HLT1 option (b): at least 2 tracks with pT > 0.5 GeV and IPχ² > 4
-base: base.yaml
-hlt1:
-  mode: any
-  lines:
-    - {name: two_track_like, n_tracks: 2, pt_min: 0.5, ipchi2_min: 4.0}

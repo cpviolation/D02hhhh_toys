@@ -22,11 +22,43 @@ The emulator acts on events in the :math:`D^0` rest frame and their decay times
    :math:`N_\mathrm{off}` daughters with :math:`\mathrm{IP}\chi^2` above a cut
    (:class:`Offline`; :math:`N_\mathrm{off} = 0` by default, so that the
    :math:`\mathrm{IP}\chi^2` requirement enters only through the 1- or 2-track HLT1
-   lines; 4 is a cut on every daughter); and the HLT1 decision. HLT1 is a list of lines, each requiring at least :math:`N` daughters
-   with :math:`p_T` and :math:`\mathrm{IP}\chi^2` above cuts. They are combined with
-   ``mode = "any"`` (the event passes if any line fires, as in the real HLT1) or
-   ``mode = "mixture"`` (each event is assigned one line at random with ``fractions``,
-   e.g. for data-taking periods with different trigger settings).
+   lines; 4 is a cut on every daughter); and the HLT1 decision.
+
+**HLT1** is a list of lines, combined with ``mode = "any"`` (the event passes if any
+line fires, as in the real HLT1) or ``mode = "mixture"`` (each event is assigned one line
+at random with ``fractions``, e.g. for data-taking periods with different trigger
+settings). Only reconstructed daughters count. Three kinds of line exist:
+
+- :class:`OneTrackLine` (``kind: one_track``): a daughter with
+  :math:`p_T > p_\mathrm{wall}` and
+
+  .. math::
+
+      \ln\frac{\mathrm{IP}\chi^2}{\mathrm{IP}\chi^2_\mathrm{floor}} > \frac{k}{p_T - p_\mathrm{wall}},
+
+  a hyperbola in the :math:`(p_T, \ln\mathrm{IP}\chi^2)` plane. The required
+  :math:`\mathrm{IP}\chi^2` diverges at the wall and tends to the floor at high
+  :math:`p_T`, so that soft tracks must be very displaced and hard ones only slightly.
+- :class:`TwoTrackLine` (``kind: two_track``): a pair of daughters, each with
+  :math:`p_T` and :math:`\mathrm{IP}\chi^2` above loose cuts, forming a vertex that
+  passes a preselection (vertex :math:`p_T`, corrected mass, DOCA, vertex
+  :math:`\chi^2`, :math:`\eta` of the flight direction) and a linear score
+
+  .. math::
+
+      w_\mathrm{FD}\ln\mathrm{FD}\chi^2 + w_{p_T}\textstyle\sum p_T
+      + w_\mathrm{IP}\ln\min\mathrm{IP}\chi^2 - w_{\chi^2}\chi^2_\mathrm{vtx} > s_\min.
+
+  The vertex is emulated: the DOCA is :math:`|g|\sqrt{\sigma_{\mathrm{IP},1}^2 +
+  \sigma_{\mathrm{IP},2}^2}` with a standard normal :math:`g`, so that
+  :math:`\chi^2_\mathrm{vtx} = g^2`, and the flight distance is smeared with the
+  resolution :class:`VertexResolution` along the flight direction.
+- :class:`BoxLine` (``kind: box``): at least :math:`N` daughters with :math:`p_T` and
+  :math:`\mathrm{IP}\chi^2` above fixed cuts (a cross-check).
+
+These lines follow the ideas of the LHCb HLT1 inclusive hadron lines (a
+:math:`p_T`-dependent displacement requirement for one track, a multivariate
+two-track vertex selection), with their own functional forms and toy parameters.
 
 Nothing depends on the charges, so the acceptance is CP-symmetric:
 :math:`\varepsilon(\tau, \bar{p}) = \varepsilon(\tau, p)`.
@@ -93,26 +125,173 @@ class Offline:
 
 
 @dataclass
-class HLT1Line:
+class VertexResolution:
+    """Resolution of the flight distance (PV and decay vertex combined), µm."""
+
+    sigma_xy_um: float = 20.0
+    sigma_z_um: float = 100.0
+
+
+@dataclass
+class BoxLine:
     name: str
     n_tracks: int
     pt_min: float  # GeV
     ipchi2_min: float
+    kind: str = "box"
+
+    def decide(
+        self, lab: LabEvent, config: AcceptanceConfig, rng: np.random.Generator
+    ) -> np.ndarray:
+        del config, rng
+        good = (
+            lab.reconstructed & (lab.pt > self.pt_min) & (lab.ipchi2 > self.ipchi2_min)
+        )
+        return good.sum(axis=1) >= self.n_tracks
+
+
+@dataclass
+class OneTrackLine:
+    name: str = "one_track"
+    pt_wall: float = 1.5  # GeV
+    k: float = 2.0  # GeV
+    ipchi2_floor: float = 8.0
+    kind: str = "one_track"
+
+    def ipchi2_threshold(self, pt: np.ndarray) -> np.ndarray:
+        """Minimum IPχ² as a function of pT (infinite at or below the wall)."""
+        pt = np.asarray(pt, dtype=float)
+        excess = pt - self.pt_wall
+        with np.errstate(divide="ignore", over="ignore"):
+            return np.where(
+                excess > 0,
+                self.ipchi2_floor * np.exp(self.k / np.where(excess > 0, excess, 1)),
+                np.inf,
+            )
+
+    def decide(
+        self, lab: LabEvent, config: AcceptanceConfig, rng: np.random.Generator
+    ) -> np.ndarray:
+        del config, rng
+        good = lab.reconstructed & (lab.ipchi2 > self.ipchi2_threshold(lab.pt))
+        return good.any(axis=1)
+
+
+#: the six pairs of daughters
+PAIRS = np.array([(i, j) for i in range(4) for j in range(i + 1, 4)])
+
+
+@dataclass
+class TwoTrackLine:
+    name: str = "two_track"
+    track_pt_min: float = 0.2  # GeV
+    track_ipchi2_min: float = 4.0
+    vertex_pt_min: float = 1.0  # GeV
+    mcorr_min: float = 1.0  # GeV
+    doca_max_um: float = 200.0
+    vertex_chi2_max: float = 20.0
+    eta_min: float = 2.0  # of the flight direction
+    eta_max: float = 5.0
+    w_fd: float = 1.0
+    w_pt: float = 0.5  # 1/GeV
+    w_ip: float = 0.5
+    w_chi2: float = 0.05
+    score_min: float = 7.0
+    kind: str = "two_track"
+
+    def pair_quantities(
+        self, lab: LabEvent, config: AcceptanceConfig, rng: np.random.Generator
+    ) -> dict[str, np.ndarray]:
+        """Emulated vertex quantities of the six pairs, each ``(N, 6)``."""
+        i, j = PAIRS.T
+        pair = lab.momenta[:, i] + lab.momenta[:, j]
+        p3 = pair[..., :3]
+        mass2 = np.clip(pair[..., 3] ** 2 - np.sum(p3**2, axis=-1), 0, None)
+        flight = lab.flight
+        length = np.linalg.norm(flight, axis=1)
+        with np.errstate(invalid="ignore", divide="ignore"):
+            n = flight / length[:, None]
+        n = np.nan_to_num(n, nan=0.0)
+        n[length == 0, 2] = 1.0
+        p_along = np.einsum("npk,nk->np", p3, n)
+        p_perp = np.sqrt(np.clip(np.sum(p3**2, axis=-1) - p_along**2, 0, None))
+        res = config.vertex_resolution
+        sigma_fd = np.sqrt(
+            res.sigma_xy_um**2 * (n[:, 0] ** 2 + n[:, 1] ** 2)
+            + res.sigma_z_um**2 * n[:, 2] ** 2
+        )
+        fd = length[:, None] + sigma_fd[:, None] * rng.normal(
+            size=(len(length), len(PAIRS))
+        )
+        g = rng.normal(size=(len(length), len(PAIRS)))
+        sigma_doca = np.hypot(lab.ip_sigma[:, i], lab.ip_sigma[:, j])
+        flight_eta = np.arcsinh(n[:, 2] / np.maximum(np.hypot(n[:, 0], n[:, 1]), 1e-12))
+        return {
+            "track_ok": lab.reconstructed[:, i]
+            & lab.reconstructed[:, j]
+            & (np.minimum(lab.pt[:, i], lab.pt[:, j]) > self.track_pt_min)
+            & (np.minimum(lab.ipchi2[:, i], lab.ipchi2[:, j]) > self.track_ipchi2_min),
+            "vertex_pt": np.hypot(p3[..., 0], p3[..., 1]),
+            "mcorr": np.sqrt(mass2 + p_perp**2) + p_perp,
+            "doca": np.abs(g) * sigma_doca,
+            "vertex_chi2": g**2,
+            "fdchi2": (fd / sigma_fd[:, None]) ** 2,
+            "sum_pt": lab.pt[:, i] + lab.pt[:, j],
+            "min_ipchi2": np.minimum(lab.ipchi2[:, i], lab.ipchi2[:, j]),
+            "flight_eta": np.broadcast_to(flight_eta[:, None], g.shape),
+        }
+
+    def score(self, q: dict[str, np.ndarray]) -> np.ndarray:
+        with np.errstate(divide="ignore"):
+            return (
+                self.w_fd * np.log(q["fdchi2"])
+                + self.w_pt * q["sum_pt"]
+                + self.w_ip * np.log(q["min_ipchi2"])
+                - self.w_chi2 * q["vertex_chi2"]
+            )
+
+    def decide(
+        self, lab: LabEvent, config: AcceptanceConfig, rng: np.random.Generator
+    ) -> np.ndarray:
+        q = self.pair_quantities(lab, config, rng)
+        presel = (
+            q["track_ok"]
+            & (q["vertex_pt"] > self.vertex_pt_min)
+            & (q["mcorr"] > self.mcorr_min)
+            & (q["doca"] < self.doca_max_um)
+            & (q["vertex_chi2"] < self.vertex_chi2_max)
+            & (q["flight_eta"] > self.eta_min)
+            & (q["flight_eta"] < self.eta_max)
+        )
+        return np.any(presel & (self.score(q) > self.score_min), axis=1)
+
+
+LINE_KINDS = {"box": BoxLine, "one_track": OneTrackLine, "two_track": TwoTrackLine}
+HLT1Line = BoxLine | OneTrackLine | TwoTrackLine
+
+
+def make_line(values: dict[str, Any] | HLT1Line) -> HLT1Line:
+    """An HLT1 line from its YAML dict; ``kind`` selects the class (default ``box``)."""
+    if not isinstance(values, dict):
+        return values
+    values = dict(values)
+    kind = values.pop("kind", "box")
+    if kind not in LINE_KINDS:
+        msg = f"Unknown HLT1 line kind {kind!r} (known: {sorted(LINE_KINDS)})"
+        raise ValueError(msg)
+    return LINE_KINDS[kind](**values)
 
 
 @dataclass
 class HLT1:
     lines: list[HLT1Line] = field(
-        default_factory=lambda: [HLT1Line("track_mva_like", 1, 1.0, 7.4)]
+        default_factory=lambda: [OneTrackLine(), TwoTrackLine()]
     )
     mode: str = "any"  # "any" or "mixture"
     fractions: list[float] | None = None  # for "mixture", one per line
 
     def __post_init__(self) -> None:
-        self.lines = [
-            line if isinstance(line, HLT1Line) else HLT1Line(**line)
-            for line in self.lines
-        ]
+        self.lines = [make_line(line) for line in self.lines]
         if not self.lines:
             msg = "HLT1 needs at least one line"
             raise ValueError(msg)
@@ -137,6 +316,7 @@ class AcceptanceConfig:
     tracks: TrackRequirements = field(default_factory=TrackRequirements)
     tracking: TrackingEfficiency = field(default_factory=TrackingEfficiency)
     offline: Offline = field(default_factory=Offline)
+    vertex_resolution: VertexResolution = field(default_factory=VertexResolution)
     hlt1: HLT1 = field(default_factory=HLT1)
     ctau_um: float = D0_CTAU_UM
     d0_mass: float = D0_MASS
@@ -338,20 +518,15 @@ class LHCbAcceptance:
             reconstructed=in_acceptance & found,
         )
 
-    def hlt1_lines(self, lab: LabEvent) -> np.ndarray:
+    def hlt1_lines(self, lab: LabEvent, rng: np.random.Generator) -> np.ndarray:
         """Decision of each HLT1 line, ``(N, n_lines)``. Only reconstructed daughters count."""
-        decisions = []
-        for line in self.config.hlt1.lines:
-            good = (
-                lab.reconstructed
-                & (lab.pt > line.pt_min)
-                & (lab.ipchi2 > line.ipchi2_min)
-            )
-            decisions.append(good.sum(axis=1) >= line.n_tracks)
+        decisions = [
+            line.decide(lab, self.config, rng) for line in self.config.hlt1.lines
+        ]
         return np.column_stack(decisions)
 
     def hlt1(self, lab: LabEvent, rng: np.random.Generator) -> np.ndarray:
-        lines = self.hlt1_lines(lab)
+        lines = self.hlt1_lines(lab, rng)
         config = self.config.hlt1
         if config.mode == "any":
             return lines.any(axis=1)

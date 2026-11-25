@@ -1,0 +1,6 @@
+# HLT1: only the one-track line of base.yaml
+base: base.yaml
+hlt1:
+  mode: any
+  lines:
+    - {kind: one_track, name: one_track, pt_wall: 1.5, k: 2.0, ipchi2_floor: 8.0}

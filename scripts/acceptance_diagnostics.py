@@ -37,10 +37,11 @@ SIZE, TAU_MAX = 1_000_000, 8.0
 EDGES = np.linspace(0, TAU_MAX, 33)
 CENTRES = (EDGES[1:] + EDGES[:-1]) / 2
 HLT1 = {
-    "(a) 1 track, pT > 1 GeV, IPχ² > 7.4": "hlt1_a.yaml",
-    "(b) 2 tracks, pT > 0.5 GeV, IPχ² > 4": "hlt1_b.yaml",
-    "(a) or (b)": "hlt1_a_or_b.yaml",
-    "50/50 mixture of (a) and (b)": "hlt1_mixture.yaml",
+    "one-track or two-track (default)": "base.yaml",
+    "one-track line only": "hlt1_one_track.yaml",
+    "50/50 mixture of the two": "hlt1_mixture.yaml",
+    "box cut, 1 track (cross-check)": "hlt1_box_a.yaml",
+    "box cut, 2 tracks (cross-check)": "hlt1_box_b.yaml",
 }
 
 
@@ -68,23 +69,23 @@ def main() -> None:
             CENTRES, 100 * eff, 100 * err, color=color, linewidth=2, label=label
         )
         print(
-            f"{label:40s} overall {100 * accepted[label].mean():.2f}%  "
+            f"{label:34s} overall {100 * accepted[label].mean():.2f}%  "
             f"max {100 * np.nanmax(eff):.2f}% at tau = {CENTRES[np.nanargmax(eff)]:.2f}"
         )
-    # offline IPchi2 requirement on N daughters, with HLT1 (a)
-    config_a = AcceptanceConfig.from_yaml(CONFIGS / "hlt1_a.yaml")
+    # offline IPchi2 requirement on N daughters, with the default HLT1
+    config_a = AcceptanceConfig.from_yaml(CONFIGS / "base.yaml")
     for n in (1, 2, 4):
         acc = LHCbAcceptance(config_a.with_overrides({"offline.n_tracks": n}))
         passed = acc.accept(events, tau, np.random.default_rng(3))
         eff, _ = binned_efficiency(tau, passed, EDGES)
         half = CENTRES[np.argmax(eff >= 0.5 * eff[-1])]
         print(
-            f"HLT1 (a), offline IPchi2 > 4 on >= {n} daughters: overall {100 * passed.mean():.2f}%"
+            f"default HLT1, offline IPchi2 > 4 on >= {n} daughters: overall {100 * passed.mean():.2f}%"
             f"  last bin {100 * eff[-1]:.2f}%  half of it at tau = {half:.2f}"
         )
     eff, _ = binned_efficiency(tau, accepted[next(iter(HLT1))], EDGES)
     print(
-        f"HLT1 (a), no offline IPchi2 cut: half of the last bin at tau = "
+        f"default HLT1, no offline IPchi2 cut: half of the last bin at tau = "
         f"{CENTRES[np.argmax(eff >= 0.5 * eff[-1])]:.2f}"
     )
     style_axes(ax)
@@ -98,8 +99,21 @@ def main() -> None:
     )
     ax.set_xlim(0, TAU_MAX)
     ax.set_ylim(bottom=0)
-    ax.legend(frameon=False, labelcolor=TEXT, fontsize=9)
+    ax.legend(
+        frameon=False,
+        labelcolor=TEXT,
+        fontsize=8.5,
+        loc="lower right",
+        bbox_to_anchor=(1, 0.17),
+    )
     fig.savefig(FIGURES / "acceptance_vs_tau.png", dpi=150)
+    two = LHCbAcceptance(AcceptanceConfig.from_yaml(CONFIGS / "hlt1_two_track.yaml"))
+    two_only = two.accept(events, tau, np.random.default_rng(3))
+    default = accepted[next(iter(HLT1))]
+    print(
+        f"two-track line only: overall {100 * two_only.mean():.2f}%;"
+        f" default and two-track-only decisions differ on {np.mean(default != two_only):.2e} of events"
+    )
 
     # 2. the same curve in bins of phase-space variables, relative to the average
     label = next(iter(HLT1))
@@ -154,6 +168,50 @@ def main() -> None:
         fontsize=11,
     )
     fig.savefig(FIGURES / "acceptance_vs_tau_in_phase_space_bins.png", dpi=150)
+
+    # 3. the one-track boundary over the reconstructed toy tracks (tau from e^-tau)
+    acc = LHCbAcceptance()
+    rng = np.random.default_rng(4)
+    lab = acc.lab_event(events[:200_000], rng.exponential(size=200_000), rng)
+    good = lab.reconstructed
+    line = acc.config.hlt1.lines[0]
+    fig, ax = plt.subplots(figsize=(7, 4.2), layout="constrained")
+    ax.hist2d(
+        lab.pt[good],
+        np.log(lab.ipchi2[good]),
+        bins=(np.linspace(0, 6, 121), np.linspace(-4, 12, 81)),
+        cmap="Blues",
+        cmin=1,
+    )
+    pt = np.linspace(line.pt_wall + 1e-3, 6, 400)
+    ax.plot(
+        pt,
+        np.log(line.ipchi2_threshold(pt)),
+        color=CATEGORICAL[1],
+        linewidth=2,
+        label=f"one-track: ln(IPχ²/{line.ipchi2_floor:g}) > {line.k:g} GeV/(pT − {line.pt_wall:g} GeV)",
+    )
+    ax.axhline(
+        np.log(4),
+        color=CATEGORICAL[2],
+        linewidth=2,
+        linestyle="--",
+        label="two-track track preselection: IPχ² > 4 (and pT > 0.2 GeV)",
+    )
+    style_axes(ax)
+    ax.set_xlabel("track pT [GeV]", color=TEXT)
+    ax.set_ylabel("ln IPχ²", color=TEXT)
+    ax.set_ylim(-4, 12)
+    ax.set_title(
+        "Reconstructed toy daughters (τ from e^−τ) and the HLT1 track requirements",
+        color=TEXT,
+        loc="left",
+        fontsize=11,
+    )
+    ax.legend(frameon=False, labelcolor=TEXT, fontsize=9, loc="upper right")
+    fig.savefig(FIGURES / "hlt1_one_track_boundary.png", dpi=150)
+    above = lab.ipchi2[good] > line.ipchi2_threshold(lab.pt[good])
+    print(f"reconstructed daughters above the one-track boundary: {above.mean():.4f}")
 
 
 if __name__ == "__main__":

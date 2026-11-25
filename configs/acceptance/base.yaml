@@ -23,9 +23,31 @@ tracking:  # ε(p) = plateau · (1 − exp(−(p − threshold)/width))
 offline:  # at least n_tracks daughters with IPχ² > ipchi2_min (0: no cut, 4: all four)
   n_tracks: 0
   ipchi2_min: 4.0
-hlt1:  # (a) TrackMVA-like single-track line
+vertex_resolution:  # flight-distance resolution (PV and decay vertex combined), µm
+  sigma_xy_um: 20.0
+  sigma_z_um: 100.0
+hlt1:  # one-track OR two-track line, as in data taking
   mode: any
   lines:
-    - {name: track_mva_like, n_tracks: 1, pt_min: 1.0, ipchi2_min: 7.4}
+    - kind: one_track  # ln(IPχ²/ipchi2_floor) > k/(pT − pt_wall)
+      name: one_track
+      pt_wall: 1.5
+      k: 2.0
+      ipchi2_floor: 8.0
+    - kind: two_track  # pair preselection, then a linear score > score_min
+      name: two_track
+      track_pt_min: 0.2
+      track_ipchi2_min: 4.0
+      vertex_pt_min: 1.0
+      mcorr_min: 1.0
+      doca_max_um: 200.0
+      vertex_chi2_max: 20.0
+      eta_min: 2.0
+      eta_max: 5.0
+      w_fd: 1.0     # × ln FDχ²
+      w_pt: 0.5     # × Σ pT [GeV]
+      w_ip: 0.5     # × ln min IPχ²
+      w_chi2: 0.05  # × vertex χ² (subtracted)
+      score_min: 7.0
 ctau_um: 122.9
 d0_mass: 1.86484

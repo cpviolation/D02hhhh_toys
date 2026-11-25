@@ -1,7 +1,0 @@
-# HLT1 fires if either line fires, as in the real trigger
-base: base.yaml
-hlt1:
-  mode: any
-  lines:
-    - {name: track_mva_like, n_tracks: 1, pt_min: 1.0, ipchi2_min: 7.4}
-    - {name: two_track_like, n_tracks: 2, pt_min: 0.5, ipchi2_min: 4.0}

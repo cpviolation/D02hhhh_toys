@@ -1,0 +1,6 @@
+# Cross-check: rectangular cut, >= 1 track with pT > 1 GeV and IPχ² > 7.4
+base: base.yaml
+hlt1:
+  mode: any
+  lines:
+    - {kind: box, name: box_one_track, n_tracks: 1, pt_min: 1.0, ipchi2_min: 7.4}

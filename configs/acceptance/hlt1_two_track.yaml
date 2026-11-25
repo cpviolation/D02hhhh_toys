@@ -1,0 +1,6 @@
+# HLT1: only the two-track line (default parameters of TwoTrackLine, as in base.yaml)
+base: base.yaml
+hlt1:
+  mode: any
+  lines:
+    - {kind: two_track, name: two_track}

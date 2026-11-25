@@ -10,17 +10,20 @@ from tensorwaves.data.rng import NumpyUniformRNG
 from d02hhhh_toys.acceptance import (
     HLT1,
     AcceptanceConfig,
-    HLT1Line,
+    BoxLine,
     LHCbAcceptance,
+    OneTrackLine,
+    TwoTrackLine,
     boost,
+    make_line,
     random_rotations,
     sample_pt,
 )
 from d02hhhh_toys.model import cp_conjugate, from_sample
 
 CONFIGS = Path(__file__).parents[1] / "configs" / "acceptance"
-LINE_A = HLT1Line("track_mva_like", 1, 1.0, 7.4)
-LINE_B = HLT1Line("two_track_like", 2, 0.5, 4.0)
+LINE_A = BoxLine("box_one_track", 1, 1.0, 7.4)
+LINE_B = BoxLine("box_two_track", 2, 0.5, 4.0)
 
 
 @pytest.fixture(scope="module")
@@ -145,14 +148,14 @@ def test_hlt1_line_counting():
     lab.reconstructed = np.ones((4, 4), dtype=bool)
     acc = LHCbAcceptance(AcceptanceConfig(hlt1=HLT1([LINE_A, LINE_B])))
     np.testing.assert_array_equal(
-        acc.hlt1_lines(lab),
+        acc.hlt1_lines(lab, np.random.default_rng(0)),
         [[True, False], [False, True], [False, False], [False, False]],
     )
     np.testing.assert_array_equal(
         acc.hlt1(lab, np.random.default_rng(0)), [True, True, False, False]
     )
     lab.reconstructed[0, 0] = False  # an unreconstructed track does not trigger
-    assert not acc.hlt1_lines(lab)[0, 0]
+    assert not acc.hlt1_lines(lab, np.random.default_rng(0))[0, 0]
 
 
 def test_hlt1_modes(events):
@@ -162,7 +165,9 @@ def test_hlt1_modes(events):
         acc = LHCbAcceptance(AcceptanceConfig(hlt1=hlt1))
         rng = np.random.default_rng(seed)
         lab = acc.lab_event(events, tau, rng)
-        return acc.hlt1_lines(lab), acc.hlt1(lab, rng)
+        return acc.hlt1_lines(lab, np.random.default_rng(seed + 1)), acc.hlt1(
+            lab, np.random.default_rng(seed + 1)
+        )
 
     lines, either = lines_and_decision(HLT1([LINE_A, LINE_B], "any"))
     np.testing.assert_array_equal(either, lines[:, 0] | lines[:, 1])
@@ -187,16 +192,20 @@ def test_hlt1_validation():
 def test_configs():
     base = AcceptanceConfig.from_yaml(CONFIGS / "base.yaml")
     assert base == AcceptanceConfig()
-    assert AcceptanceConfig.from_yaml(CONFIGS / "hlt1_a.yaml") == base
-    b = AcceptanceConfig.from_yaml(CONFIGS / "hlt1_b.yaml")
-    assert b.hlt1.lines == [LINE_B]
-    assert b.ip_resolution == base.ip_resolution
+    assert [line.kind for line in base.hlt1.lines] == ["one_track", "two_track"]
+    one = AcceptanceConfig.from_yaml(CONFIGS / "hlt1_one_track.yaml")
+    assert one.hlt1.lines == [OneTrackLine()]
+    two = AcceptanceConfig.from_yaml(CONFIGS / "hlt1_two_track.yaml")
+    assert two.hlt1.lines == [TwoTrackLine()]
+    assert two.ip_resolution == base.ip_resolution
     mixture = AcceptanceConfig.from_yaml(CONFIGS / "hlt1_mixture.yaml")
     assert mixture.hlt1.mode == "mixture"
-    assert mixture.hlt1.lines == [LINE_A, LINE_B]
-    assert AcceptanceConfig.from_yaml(CONFIGS / "hlt1_a_or_b.yaml").hlt1.lines == [
-        LINE_A,
-        LINE_B,
+    assert mixture.hlt1.lines == base.hlt1.lines
+    assert AcceptanceConfig.from_yaml(CONFIGS / "hlt1_box_a.yaml").hlt1.lines == [
+        LINE_A
+    ]
+    assert AcceptanceConfig.from_yaml(CONFIGS / "hlt1_box_b.yaml").hlt1.lines == [
+        LINE_B
     ]
     shifted = base.with_overrides(
         {"ip_resolution.scale": 1.05, "tracking": {"width": 3.0}}
@@ -204,10 +213,56 @@ def test_configs():
     assert shifted.ip_resolution.scale == 1.05
     assert shifted.tracking.width == 3.0
     assert shifted.tracking.plateau == base.tracking.plateau
+    assert shifted.hlt1 == base.hlt1  # lines survive the dict round trip
     with pytest.raises(KeyError):
         base.with_overrides({"ip_resolution.sigma": 1})
     with pytest.raises(KeyError):
         AcceptanceConfig.from_dict({"tracks": {"p_max": 3}})
+    with pytest.raises(ValueError, match="kind"):
+        make_line({"kind": "topo", "name": "x"})
+
+
+def test_one_track_boundary():
+    """The IPχ² threshold diverges at the wall, falls with pT and tends to the floor."""
+    line = OneTrackLine(pt_wall=1.5, k=2.0, ipchi2_floor=8.0)
+    pt = np.array([1.0, 1.5, 1.6, 2.0, 3.0, 5.0, 10.0, 1000.0])
+    threshold = line.ipchi2_threshold(pt)
+    assert np.all(np.isinf(threshold[:2]))
+    assert np.all(np.diff(threshold[2:]) < 0)
+    np.testing.assert_allclose(threshold[3], 8 * np.exp(2.0 / 0.5))
+    assert threshold[-1] == pytest.approx(8.0, rel=3e-3)
+
+
+def test_two_track_pair_quantities(events):
+    acc = LHCbAcceptance()
+    rng = np.random.default_rng(15)
+    lab = acc.lab_event(events, np.full(len(events), 1.0), rng)
+    q = TwoTrackLine().pair_quantities(lab, acc.config, rng)
+    assert q["mcorr"].shape == (len(events), 6)
+    # the corrected mass is at least the pair mass; the vertex chi2 has 1 dof
+    pair = lab.momenta[:, 0] + lab.momenta[:, 1]
+    m01 = np.sqrt(pair[:, 3] ** 2 - np.sum(pair[:, :3] ** 2, axis=1))
+    assert np.all(q["mcorr"][:, 0] >= m01 - 1e-9)
+    assert abs(q["vertex_chi2"].mean() - 1) < 0.02
+    np.testing.assert_allclose(q["sum_pt"][:, 0], lab.pt[:, 0] + lab.pt[:, 1])
+    # the flight direction is the D0 direction, in 2 < eta < 5
+    assert np.all((q["flight_eta"] > 2 - 1e-9) & (q["flight_eta"] < 5 + 1e-9))
+    # without flight, FDchi2 has 1 dof and the score cut removes almost everything
+    lab0 = acc.lab_event(events, np.zeros(len(events)), rng)
+    assert TwoTrackLine().decide(lab0, acc.config, rng).mean() < 0.005
+
+
+def test_two_track_line_is_most_efficient_for_soft_charm(events):
+    """At large tau the two-track line keeps most events, the one-track line few."""
+    tau = np.full(len(events), 4.0)
+    rates = {}
+    for line in (OneTrackLine(), TwoTrackLine()):
+        acc = LHCbAcceptance(AcceptanceConfig(hlt1=HLT1([line])))
+        rng = np.random.default_rng(16)
+        lab = acc.lab_event(events, tau, rng)
+        rates[line.kind] = acc.hlt1(lab, rng)[acc.offline(lab)].mean()
+    assert rates["two_track"] > 0.8
+    assert rates["one_track"] < 0.3
 
 
 def test_acceptance_turns_on_with_decay_time(events):
