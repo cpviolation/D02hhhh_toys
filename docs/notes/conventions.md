@@ -51,7 +51,7 @@ Each point is pinned by the test named in brackets.
   weighted sample was agreed on 2026-11-25, initially with g = the generation proposal.
   **Phase 6 measurements favour g = the peaked phase space, with w = 1/r:** it is
   about 15 times more efficient per amplitude evaluation, and the acceptance can be
-  applied before the amplitudes. It is the implemented default, pending confirmation;
+  applied before the amplitudes. **Confirmed as the default on 2026-11-25**;
   see `normalisation.md`. The proposal and flat phase space remain available.
 
 ## Practical
