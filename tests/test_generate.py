@@ -151,3 +151,12 @@ def test_single_toy_closure_without_acceptance(subset_model):
 )
 def test_single_toy_closure_full_model(full_model):
     closure(full_model, size=40_000, n_norm=200_000, seed=32)
+
+
+def test_seed_sequence_is_not_consumed(sampler):
+    """The same SeedSequence object gives the same toy twice (spawn() would not)."""
+    generator = MixingGenerator(sampler, INFLATED)
+    seed = np.random.SeedSequence(99)
+    a = generator.generate(D0, 300, seed)
+    b = generator.generate(D0, 300, seed)
+    np.testing.assert_array_equal(a.tau, b.tau)

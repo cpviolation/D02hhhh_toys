@@ -40,7 +40,7 @@ variance of the estimated mixing-dependent ratios Re⟨A*Ā⟩, Im⟨A*Ā⟩ and
 - **With an acceptance, `flat` and `peaked` gain another factor of ~10:** the
   acceptance needs only the kinematics and τ, so it is applied before any amplitude is
   evaluated. `proposal` needs the amplitudes for its own accept-reject.
-- **The default is therefore `peaked`.** The two other methods remain as options and
+- **The default is therefore `peaked`** (confirmed on 2026-11-25). The two other methods remain as options and
   cross-checks; `test_normalisation_methods_agree` checks that all three estimate the
   same ratios.
 

@@ -207,3 +207,15 @@ def test_single_toy_closure_with_free_couplings(subset_model, generator):
         truth[f"c{k}_im"] = subset_model.couplings[k].imag
     p = pulls(result, truth)
     assert all(abs(v) < 4 for v in p.values()), (p, result.values, result.errors)
+
+
+def test_nll_is_finite_far_from_the_minimum(subset_model, generator):
+    data = {
+        tag: RateSample.from_toy(generator.generate(tag, 500, seed=20 + tag))
+        for tag in (D0, D0BAR)
+    }
+    norm = normalisation_sample(subset_model, 5000, seed=21)
+    nll = MixingNLL(data, {D0: norm, D0BAR: norm})
+    with np.errstate(all="raise"):
+        value = nll([1e5, -1e5, 1e5, 1e5])  # |w| tau/2 >> 700 at large tau
+    assert np.isfinite(value)
