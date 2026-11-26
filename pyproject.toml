@@ -21,6 +21,7 @@ d02hhhh-toys = "d02hhhh_toys.cli:main"
 
 [dependency-groups]
 dev = ["pre-commit", "pytest", "pytest-xdist", "ruff", "matplotlib"]
+docs = ["mkdocs-material"]
 
 [build-system]
 requires = ["setuptools>=61.2", "setuptools_scm"]

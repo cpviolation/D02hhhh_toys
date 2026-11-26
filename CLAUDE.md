@@ -40,3 +40,11 @@ on each phase go in `docs/notes/`.
 
 - One branch and one pull request per phase (from Phase 7). Physics values (cuts,
   acceptance numbers, scenario magnitudes) are proposed and confirmed before use.
+- Decisions live in `docs/decisions.md`.
+  - A proposal goes under *Open decisions*, with an ID (P<n>), its options and their
+    impact, and a recommendation.
+  - When the user confirms it, move it to *Confirmed decisions* (C<n>), with the date.
+  - Keep the status table in `docs/index.md` up to date.
+- The site (MkDocs Material, `mkdocs.yml`) is published to GitHub Pages from `main` by
+  `.github/workflows/docs.yml`. Build it with
+  `uv run --group docs mkdocs build`, which is strict: broken links fail the build.

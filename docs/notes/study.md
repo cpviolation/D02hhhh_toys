@@ -31,7 +31,8 @@ model.
 | `none` | no acceptance | events without acceptance |
 
 `closure` must be `full` without overrides. The proposed data/simulation differences
-are below. **Their magnitudes are proposals, not yet confirmed.**
+are below. **Their magnitudes are proposals, not yet confirmed:** see decision
+[P1](../decisions.md#p1-sizes-of-the-datasimulation-differences).
 
 | Scenario | Override of the analyst's model |
 |---|---|
@@ -91,7 +92,7 @@ by the same amount. That offset does not average away over toys.
   the scenarios' offsets nearly equal. This is the case for `full` with overrides and
   for `factorised`, and less so for `ignore_time` and `ignore_ps`, whose τ or points
   are redrawn.
-- **Consequence for Phase 8.** For σ_norm(y_CP) ≲ 0.1, N_norm/N_data must be about
+- **Consequence for Phase 8** (decision [P2](../decisions.md#p2-size-of-the-normalisation-sample)). For σ_norm(y_CP) ≲ 0.1, N_norm/N_data must be about
   1000. At 10⁵ events per tag that is 10⁸ normalisation events: about 5 GB per base
   sample, and 6 CPU-hours each at 0.22 ms per event. Alternatives:
   - smaller toys, quoting absolute shifts (in units of 1e-3), which do not depend on
