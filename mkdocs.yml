@@ -1,0 +1,44 @@
+site_name: D0 → KKππ acceptance toys
+site_url: https://cpviolation.github.io/D02hhhh_toys/
+repo_url: https://github.com/cpviolation/D02hhhh_toys
+repo_name: cpviolation/D02hhhh_toys
+edit_uri: edit/main/docs/
+docs_dir: docs
+strict: true
+
+nav:
+  - Home: index.md
+  - Decisions: decisions.md
+  - Study plan: TOY_STUDY_PLAN.md
+  - Notes:
+      - "Phase 0: inventory": notes/example_inventory.md
+      - "Phases 2–4: conventions": notes/conventions.md
+      - "Phase 5: acceptance": notes/acceptance.md
+      - "Phase 6: normalisation": notes/normalisation.md
+      - "Phase 7: study driver": notes/study.md
+
+theme:
+  name: material
+  features:
+    - navigation.sections
+    - navigation.top
+    - content.code.copy
+    - search.highlight
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: indigo
+      toggle: {icon: material/brightness-7, name: Dark mode}
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: indigo
+      toggle: {icon: material/brightness-4, name: Light mode}
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - tables
+  - toc:
+      permalink: true
+  - pymdownx.details
+  - pymdownx.superfences

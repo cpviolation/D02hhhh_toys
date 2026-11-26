@@ -166,6 +166,9 @@ The lines here are deliberately our own, so that none of this is required.
 
 ## Open items
 
+On 2026-11-26 the toy values were kept for now (decision
+[C11](../decisions.md#confirmed-decisions)). They are still to be tuned on Run 3 simulation:
+
 - **The D0 production spectrum and η range** (see above): keep the toy form, or use a
   measured or simulated spectrum.
 - **The other toy values:**
