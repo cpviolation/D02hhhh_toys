@@ -10,6 +10,8 @@ seed: 20261126
 acceptance: ../acceptance/base.yaml
 backend: numpy
 norm_method: peaked
+# |A|^2/r ceiling of the toy generator: the largest of 4e7 candidates is 4.42 (Phase 8)
+sampler_maximum: 6.0
 scenarios:
   - {name: closure, mode: full}
   - {name: factorised, mode: factorised}

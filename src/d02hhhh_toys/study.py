@@ -118,6 +118,7 @@ class StudyConfig:
     norm_method: str = "peaked"
     tau_max: float = 20.0
     sampler_safety: float = 1.2
+    sampler_maximum: float | None = None  # fixed |A|^2/r maximum (None: estimate)
     norm_check_parts: int = 4  # K of the normalisation-offset check (0: none)
     norm_chunk: int = 250_000  # accepted normalisation events per chunk (parallel unit)
     base_dir: str = "."
@@ -409,7 +410,9 @@ def run_study(
     (outdir / "config.json").write_text(json.dumps(config.to_dict(), indent=2))
     log(f"Building the model ({config.backend})")
     model = AmplitudeModel(chains=config.chains, backend=config.backend)
-    sampler = AmplitudeSampler(model, safety=config.sampler_safety)
+    sampler = AmplitudeSampler(
+        model, safety=config.sampler_safety, maximum=config.sampler_maximum
+    )
     generator = MixingGenerator(sampler, config.parameters, tau_max=config.tau_max)
     _STATE.update(
         model=model,
