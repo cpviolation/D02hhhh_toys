@@ -231,10 +231,10 @@ class TwoTrackLine:
             res.sigma_xy_um**2 * (n[:, 0] ** 2 + n[:, 1] ** 2)
             + res.sigma_z_um**2 * n[:, 2] ** 2
         )
-        fd = length[:, None] + sigma_fd[:, None] * rng.normal(
-            size=(len(length), len(PAIRS))
+        fd = length[:, None] + sigma_fd[:, None] * lab.batch_draw(
+            rng.normal, (len(PAIRS),)
         )
-        g = rng.normal(size=(len(length), len(PAIRS)))
+        g = lab.batch_draw(rng.normal, (len(PAIRS),))
         sigma_doca = np.hypot(lab.ip_sigma[:, i], lab.ip_sigma[:, j])
         flight_eta = np.arcsinh(n[:, 2] / np.maximum(np.hypot(n[:, 0], n[:, 1]), 1e-12))
         return {
@@ -463,6 +463,33 @@ class LabEvent:
     ip_sigma: np.ndarray  # µm
     ipchi2: np.ndarray
     reconstructed: np.ndarray  # bool: in acceptance and found by the tracking
+    index: np.ndarray | None = None  # (N,): rows in the original batch (None: all)
+    batch_size: int | None = None  # size of the original batch
+
+    def __post_init__(self) -> None:
+        if self.index is None:
+            self.index = np.arange(len(self.flight))
+            self.batch_size = len(self.flight)
+
+    def __len__(self) -> int:
+        return len(self.flight)
+
+    def select(self, mask: np.ndarray) -> LabEvent:
+        """The rows ``mask``, remembering their place in the original batch."""
+        values = {
+            f.name: getattr(self, f.name)[mask]
+            for f in dataclasses.fields(self)
+            if f.name not in {"index", "batch_size"}
+        }
+        return LabEvent(**values, index=self.index[mask], batch_size=self.batch_size)
+
+    def batch_draw(self, draw, shape: tuple[int, ...] = ()) -> np.ndarray:
+        """Random numbers drawn for the whole original batch, ``draw(size=(batch_size, *shape))``, at the rows of this event.
+
+        A subset of a batch thus gets the same random numbers as in the full batch,
+        whatever the subset: this keeps common random numbers across scenarios.
+        """
+        return draw(size=(self.batch_size, *shape))[self.index]
 
 
 class LHCbAcceptance:
@@ -540,7 +567,10 @@ class LHCbAcceptance:
         config = self.config.hlt1
         if config.mode == "any":
             return lines.any(axis=1)
-        chosen = rng.choice(len(config.lines), size=len(lines), p=config.fractions)
+        u = lab.batch_draw(rng.uniform)
+        chosen = np.searchsorted(np.cumsum(config.fractions), u, side="right").clip(
+            0, len(config.lines) - 1
+        )
         return lines[np.arange(len(lines)), chosen]
 
     def offline(self, lab: LabEvent) -> np.ndarray:
@@ -560,4 +590,10 @@ class LHCbAcceptance:
     ) -> np.ndarray:
         """Whether each event passes: all daughters reconstructed, the offline IPχ² requirement, the decay vertex inside the foil and HLT1."""
         lab = self.lab_event(events, tau, rng)
-        return self.offline(lab) & self.inside_foil(lab) & self.hlt1(lab, rng)
+        passed = self.offline(lab) & self.inside_foil(lab)
+        # HLT1 only for the events that passed so far, with its own random numbers
+        # drawn for the whole batch, so that a different mask leaves the others
+        # unchanged (common random numbers across scenarios)
+        hlt1_rng = np.random.default_rng(rng.integers(2**63))
+        passed[passed] = self.hlt1(lab.select(passed), hlt1_rng)
+        return passed

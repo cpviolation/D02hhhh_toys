@@ -31,3 +31,12 @@ on each phase go in `docs/notes/`.
 - `uvx ruff check && uvx ruff format --check`, or `pre-commit run --all-files`.
 - The shell may have `VIRTUAL_ENV` set to another project: call `.venv/bin/python`
   directly, or use `uv run`.
+- Toy studies: `.venv/bin/d02hhhh-toys study configs/study/<name>.yaml --out results/<name>
+  --workers N` (resumable), then `.venv/bin/d02hhhh-toys summarise results/<name>`.
+  See `docs/notes/study.md`.
+- GPU tests: `D02HHHH_TEST_BACKEND=jax .venv/bin/python -m pytest -m slow` (without `-n`).
+
+## Workflow
+
+- One branch and one pull request per phase (from Phase 7). Physics values (cuts,
+  acceptance numbers, scenario magnitudes) are proposed and confirmed before use.

@@ -37,7 +37,7 @@ Each point is pinned by the test named in brackets.
 
 - **|A_f|² sampler:** accept-reject on |A_f|²/r, using aman-examples'
   `peaked_phase_space_generator` (density ratio r). The maximum is estimated once and
-  multiplied by 1.5; an event above it raises an error. The efficiency is 2.7% for the
+  multiplied by 1.2 (1.5 before Phase 7); an event above it raises an error. The efficiency is 2.7% (with 1.5) for the
   full model, against 0.8% from flat phase space.
 - **Mixing step:** the proposal is ½(|A_f|² + |Ā_f|²) e^{−τ} on [0, τ_max = 20). The
   bound c = max_τ 2(|cosh|² + |sinh/w|²|z ± Δz|²) is analytic, from Cauchy–Schwarz, and

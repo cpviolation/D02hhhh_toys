@@ -63,12 +63,26 @@ class MaximumExceededError(RuntimeError):
 
 
 def _seeds(seed: int | np.random.SeedSequence, n: int) -> list[int]:
+    """``n`` integer seeds derived from ``seed``, without changing its state.
+
+    ``SeedSequence.spawn`` advances a counter, so spawning twice from the same object
+    gives different children; the children are built here from the entropy and the
+    spawn key instead, so that the same ``seed`` always gives the same numbers.
+    """
     sequence = (
         seed
         if isinstance(seed, np.random.SeedSequence)
         else np.random.SeedSequence(seed)
     )
-    return [int(s.generate_state(1)[0]) for s in sequence.spawn(n)]
+    children = [
+        np.random.SeedSequence(
+            sequence.entropy,
+            spawn_key=(*sequence.spawn_key, i),
+            pool_size=sequence.pool_size,
+        )
+        for i in range(n)
+    ]
+    return [int(s.generate_state(1)[0]) for s in children]
 
 
 @dataclass
@@ -124,7 +138,7 @@ class AmplitudeSampler:
         self,
         model: AmplitudeModel,
         *,
-        safety: float = 1.5,
+        safety: float = 1.2,
         estimate_size: int = 500_000,
         seed: int = 12345,
         bunch_size: int = 200_000,

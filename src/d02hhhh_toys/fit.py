@@ -46,6 +46,8 @@ if TYPE_CHECKING:
 
 SCALE = 1e-3
 PARAMETERS = ("x_cp_mix", "y_cp_mix", "dx_mix", "dy_mix")
+#: value of -ln L where it is not finite
+NON_FINITE_PENALTY = 1e30
 
 
 @dataclass
@@ -89,10 +91,14 @@ def _tag_nll(
     norm: tuple[np.ndarray, np.ndarray, np.ndarray],
     weight: np.ndarray | None,
 ) -> float:
-    r_data = rate(*data, p, tag, relative_to_decay=True)
-    r_norm = rate(*norm, p, tag, relative_to_decay=True)
-    mean = np.average(r_norm, weights=weight)
-    return -(np.sum(np.log(r_data)) - len(data[0]) * np.log(mean))
+    # far from the minimum (e.g. a Migrad line search) cosh/sinh can overflow: return a
+    # large finite value instead of NaN, which Migrad handles as a bad step
+    with np.errstate(over="ignore", invalid="ignore", divide="ignore"):
+        r_data = rate(*data, p, tag, relative_to_decay=True)
+        r_norm = rate(*norm, p, tag, relative_to_decay=True)
+        mean = np.average(r_norm, weights=weight)
+        value = -(np.sum(np.log(r_data)) - len(data[0]) * np.log(mean))
+    return float(value) if np.isfinite(value) else NON_FINITE_PENALTY
 
 
 class MixingNLL:

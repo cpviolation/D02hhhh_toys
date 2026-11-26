@@ -1,0 +1,21 @@
+# A few small toys on five chains, for tests and for trying the driver (minutes on CPU).
+name: smoke
+chains:
+  - "D0{rhoOmega00{rho(770)0[GounarisSakurai]{pi+,pi-}},phi(1020)0{K+,K-}}"
+  - "D0[P]{K*(892)0{K+,pi-},K*(892)bar0{K-,pi+}}"
+  - "D0{phi(1020)0{K+,K-},PiPi20[kMatrix.pole.0]{pi+,pi-}}"
+  - "D0{K*(1680)0{K+,pi-},KPi40[FOCUS.Kpi]{K-,pi+}}"
+  - "D0{K*(1680)bar0{K-,pi+},KPi50[FOCUS.Kpi]{K+,pi-}}"
+truth: {x_cp_mix: 0.03, y_cp_mix: 0.025, dx_mix: 0.005, dy_mix: -0.003}
+n_per_tag: 2000
+n_norm: 40000
+n_toys: 3
+seed: 7
+acceptance: ../acceptance/base.yaml
+scenarios:
+  - {name: closure, mode: full}
+  - {name: factorised, mode: factorised}
+  - {name: ignore_time, mode: ignore_time}
+  - {name: ignore_ps, mode: ignore_ps}
+  - {name: none, mode: none}
+  - {name: ip_resolution_+5%, mode: full, overrides: {ip_resolution.scale: 1.05}}
