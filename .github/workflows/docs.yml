@@ -14,8 +14,9 @@ jobs:
       - uses: astral-sh/setup-uv@v6
         with:
           python-version: "3.12"
-      # --no-project: the site needs only MkDocs, not the package and its JAX stack
-      - run: uv run --no-project --group docs mkdocs build
+      # only the docs group: the site needs MkDocs, not the package and its JAX stack
+      - run: uv sync --locked --only-group docs
+      - run: uv run --no-sync mkdocs build
         env:
           NO_MKDOCS_2_WARNING: "1"
       - uses: actions/upload-pages-artifact@v3
