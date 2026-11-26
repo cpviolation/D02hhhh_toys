@@ -78,7 +78,7 @@ from d02hhhh_toys.acceptance import AcceptanceConfig, LHCbAcceptance
 from d02hhhh_toys.fit import PARAMETERS, SCALE, MixingNLL, RateSample, fit
 from d02hhhh_toys.generate import AmplitudeSampler, MixingGenerator
 from d02hhhh_toys.model import AmplitudeModel
-from d02hhhh_toys.moments import NormMoments, decay_time_moments
+from d02hhhh_toys.moments import ANALYTIC_ORDER, NormMoments, decay_time_moments
 from d02hhhh_toys.normalisation import (
     normalisation_moments,
     shared_normalisation_moments,
@@ -259,19 +259,25 @@ def derive_normalisation(
     (:meth:`.NormMoments.with_decay_time_moments`):
 
     - ``factorised``: the decay times of the accepted events;
-    - ``ignore_time``: :math:`e^{-\tau}` on :math:`[0, \tau_\max)`;
+    - ``ignore_time``: :math:`e^{-\tau}` on :math:`[0, \tau_\max)`, to order
+      ``ANALYTIC_ORDER`` (its fit ends far from the truth, where order 20 does not
+      converge);
+    - ``none``: the points without acceptance, with :math:`e^{-\tau}` on
+      :math:`[0, \tau_\max)` as for ``ignore_time`` (without acceptance the decay time
+      is independent of the point, so this is the exact limit);
     - ``ignore_ps``: the points without acceptance, with the decay times of the accepted
       events.
     """
     if scenario.mode == "none":
-        return bases[NO_ACCEPTANCE]
+        moments = decay_time_moments(config.tau_max, ANALYTIC_ORDER)
+        return bases[NO_ACCEPTANCE].with_decay_time_moments(moments, config.tau_max)
     sample = bases[acceptance_key(scenario.overrides)]
     if scenario.mode == "full":
         return sample
     if scenario.mode == "factorised":
         return sample.with_decay_time_moments(sample.mean_tau_powers, sample.tau_max)
     if scenario.mode == "ignore_time":
-        moments = decay_time_moments(config.tau_max, sample.order)
+        moments = decay_time_moments(config.tau_max, ANALYTIC_ORDER)
         return sample.with_decay_time_moments(moments, config.tau_max)
     flat = bases[NO_ACCEPTANCE]
     return flat.with_decay_time_moments(sample.mean_tau_powers, sample.tau_max)
@@ -346,6 +352,7 @@ def _fit_record(result) -> dict[str, Any]:
         "valid": result.valid,
         "fval": result.fval,
         "nfcn": result.nfcn,
+        "edm": float(result.minuit.fmin.edm),
     }
 
 
