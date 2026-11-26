@@ -23,8 +23,9 @@ The amplitude model is the AmpGen model of JHEP 02 (2019) 126, taken from
 | 4 | Toy generation with mixing | done | [conventions](notes/conventions.md) |
 | 5 | LHCb-like acceptance emulator | done | [acceptance](notes/acceptance.md) |
 | 6 | Likelihood with external normalisation | done | [normalisation](notes/normalisation.md) |
-| 7 | Scenarios and study driver | in review ([PR #1](https://github.com/cpviolation/D02hhhh_toys/pull/1)) | [study](notes/study.md) |
-| 8 | Validation and first results | waiting for P1, P2 | |
+| 7 | Scenarios and study driver, documentation site | done ([#1](https://github.com/cpviolation/D02hhhh_toys/pull/1), [#2](https://github.com/cpviolation/D02hhhh_toys/pull/2)) | [study](notes/study.md) |
+| 7b | Normalisation as τ moments; variance budget of v | in progress | |
+| 8 | Validation and first results | waiting for 7b, P1, P2 | |
 
 The full plan is in the [study plan](TOY_STUDY_PLAN.md).
 [Decisions](decisions.md) lists where the code departs from it.
