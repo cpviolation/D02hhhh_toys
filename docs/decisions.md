@@ -56,12 +56,12 @@ true one by a single parameter.
 - **Current default:** n/N = 20, which gives σ_norm(y_CP) ≈ 0.43.
 - **Cost now:**
   - the fits do not depend on n, and nothing per event is stored;
-  - generation costs 0.126 ms per normalisation event, and is spread over all workers.
+  - generation costs 0.18 ms per normalisation event, and is spread over all workers.
 
 | Option | Setup | σ_norm(y_CP), σ_norm(Δx) | Normalisation cost (7 base samples) |
 |---|---|---|---|
-| **A** (recommended) | 10⁵ per tag, n = 4·10⁷ | 0.10, 0.09 | 10 CPU-h, ~15 min on 46 cores |
-| **B** | 10⁵ per tag, n = 10⁸ | 0.06, 0.06 | 25 CPU-h, ~35 min on 46 cores |
+| **A** (recommended) | 10⁵ per tag, n = 4·10⁷ | 0.10, 0.09 | 14 CPU-h, ~20 min on 46 cores |
+| **B** | 10⁵ per tag, n = 10⁸ | 0.06, 0.06 | 34 CPU-h, ~45 min on 46 cores |
 | **C** | Keep n = 2·10⁶ | 0.43, 0.41 | negligible; quote σ_norm as a known offset |
 
 - **Effect on paired shifts:** the common random numbers make the offset almost the

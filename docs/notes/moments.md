@@ -92,14 +92,17 @@ sample, and v is per normalisation event of that design.
 On the full model, NumPy, one core:
 - an amplitude evaluation costs 0.077 ms;
 - one acceptance candidate costs 0.0023 ms;
+- one peaked phase-space candidate costs 0.0015 ms;
 - the acceptance keeps 4.7% of the candidates, i.e. 21 candidates per accepted event.
+
+End to end, one core produces a normalisation event in 0.177 ms.
 
 | Design | Cost per normalisation event | v(y_CP) | Cost × v |
 |---|---|---|---|
-| Now | 0.126 ms | 3.77 | **0.47** |
-| Averaging, at the best M ≈ 34 | 0.154 ms | 4.7 | 0.72 |
+| Now | 0.177 ms | 3.77 | **0.67** |
+| Averaging, at the best M ≈ 34 | 0.157 ms | 4.6 | 0.73 |
 | Density ∝ \|A\|² by accept-reject (`proposal`) | ~30 × more | 1.38 | ≫ 1 |
-| Density ∝ \|A\|², if it were free | 0.126 ms | 1.38 | 0.17 (ideal) |
+| Density ∝ \|A\|², if it were free | 0.177 ms | 1.38 | 0.24 (ideal) |
 
 - **Averaging over τ and the acceptance does not pay.** The per-replica term is large,
   so many replicas are needed, and their acceptance evaluations cost more than they
@@ -113,5 +116,35 @@ On the full model, NumPy, one core:
 
   | N per tag | n | σ_norm(y_CP), σ_norm(Δx) | Per base sample | 7 base samples on 46 cores |
   |---|---|---|---|---|
-  | 10⁵ | 4·10⁷ | 0.10, 0.09 | 1.4 CPU-h | ~15 min |
-  | 10⁵ | 10⁸ | 0.06, 0.06 | 3.5 CPU-h | ~35 min |
+  | 10⁵ | 4·10⁷ | 0.10, 0.09 | 2.0 CPU-h | ~20 min |
+  | 10⁵ | 10⁸ | 0.06, 0.06 | 4.9 CPU-h | ~45 min |
+
+### On the GPU
+
+These were measured on an RTX A6000, with the amplitudes on JAX and everything else on
+NumPy, per accepted normalisation event:
+
+| Step | Device | Cost |
+|---|---|---|
+| Phase-space candidates (21) | CPU | 0.036 ms |
+| Acceptance (21 candidates) | CPU | 0.046 ms |
+| Amplitudes | GPU | 0.021 ms as run now; 0.004 ms in full batches |
+| Moments | CPU | 0.001 ms |
+
+- **Padding:** the amplitudes are evaluated in padded chunks of 65,536 events. A bunch
+  has only about 9,400 accepted events, so most of each chunk is padding. Collecting
+  the accepted events of several bunches before evaluating them would give the
+  full-batch figure.
+- **The GPU makes the amplitudes almost free, but the CPU part remains** (0.08 ms). One
+  GPU process is therefore only about 2 times faster than one CPU core.
+  - All 7 base samples of 4·10⁷ events would take about 6.5 hours, against about
+    20 minutes on 46 cores.
+  - Even if the amplitudes alone moved to the GPU, it would process them at 0.004 ms
+    per event. 46 CPU cores manage 0.077/46 = 0.0017 ms. On this machine, the cores
+    win.
+- **The GPU would pay** with few CPU cores, or if the acceptance and the phase-space
+  generation were also ported to JAX.
+- **A cheaper gain, on any device:** every acceptance model sees the same candidates
+  (common random numbers). The 6 base samples with an acceptance could therefore share
+  one phase-space generation, and the amplitudes of their union of accepted events,
+  which overlap by more than 80%. That would roughly halve the total cost.
