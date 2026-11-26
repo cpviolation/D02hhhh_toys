@@ -99,7 +99,8 @@ by the same amount. That offset does not average away over toys.
   are redrawn.
 - **Consequence for Phase 8** (decision [P2](../decisions.md#p2-size-of-the-normalisation-sample)).
   For σ_norm ≲ 0.1, N_norm/N_data must be about 400. Since Phase 7b this costs only
-  the generation, about 2 CPU-h per base sample at 10⁵ events per tag.
+  the generation: about 6 CPU-h for all 7 base samples at 10⁵ events per tag, with
+  the shared generation.
 
 ## Cost
 
@@ -109,7 +110,7 @@ Measured on the full model, NumPy, one core:
 |---|---|
 | model and sampler setup | 30 s + 40 s per process |
 | generation with the default acceptance | 8.3 ms per accepted event |
-| normalisation sample (`peaked`) | 0.18 ms per accepted event, once per study |
+| normalisation sample (`peaked`) | 0.078 ms per accepted event and base sample (shared), once per study |
 | likelihood call (2 × 10⁵ data events, any normalisation size) | 24 ms |
 
 Generation dominates: a 2 × 10⁵-event toy takes about 28 minutes per core, so the

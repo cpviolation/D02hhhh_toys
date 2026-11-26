@@ -16,7 +16,7 @@ from d02hhhh_toys.study import (
     CLOSURE,
     Scenario,
     StudyConfig,
-    base_chunk,
+    base_chunks,
     base_moments,
     load_moments,
     norm_chunks,
@@ -159,13 +159,27 @@ def test_common_random_numbers(subset_model):
 def test_parts_and_chunks(subset_model):
     config = make_config(n_norm=4000, norm_chunk=1000, norm_check_parts=2)
     chunks = {
-        i: base_chunk(subset_model, config, "{}", i)
+        i: base_chunks(subset_model, config, ["{}"], i)["{}"]
         for i in range(len(norm_chunks(config)))
     }
     total, parts = base_moments(chunks, 2)
     assert [p.count for p in parts] == [2000, 2000]
     np.testing.assert_allclose((parts[0] + parts[1]).aa, total.aa)
     np.testing.assert_array_equal(parts[1].aa, (chunks[1] + chunks[3]).aa)
+
+
+def test_shared_base_samples_equal_separate_ones(subset_model):
+    """Sharing candidates and amplitudes between acceptance models changes no moment."""
+    config = make_config(n_norm=3000, norm_chunk=3000, norm_check_parts=0)
+    keys = ['{"ip_resolution.scale": 1.05}', "{}", "none"]
+    shared = base_chunks(subset_model, config, keys, 0)
+    for key in keys:
+        alone = base_chunks(subset_model, config, [key], 0)[key]
+        assert shared[key].count == 3000
+        for name in ("aa", "bb", "ab", "tau_powers"):
+            np.testing.assert_allclose(
+                getattr(shared[key], name), getattr(alone, name), rtol=1e-12
+            )
 
 
 def test_moments_round_trip(norms, tmp_path):

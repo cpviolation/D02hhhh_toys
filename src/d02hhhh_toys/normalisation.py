@@ -31,10 +31,14 @@ depends on the flavour, and the likelihood normalises each tag separately.
 :func:`normalisation_moments` accumulates the decay-time moments of
 :mod:`.moments` bunch by bunch, so that a large sample is never held in memory. It
 sees the same events as :func:`normalisation_sample` with the same arguments.
+:func:`shared_normalisation_moments` does the same for several acceptance models at
+once: the candidates are generated once, and the amplitudes are evaluated once for the
+union of the accepted events.
 """
 
 from __future__ import annotations
 
+import functools
 from typing import TYPE_CHECKING
 
 import numpy as np
@@ -47,7 +51,7 @@ from d02hhhh_toys.model import from_sample
 from d02hhhh_toys.moments import ORDER, NormMoments
 
 if TYPE_CHECKING:
-    from collections.abc import Iterator
+    from collections.abc import Hashable, Iterator, Mapping
 
     from d02hhhh_toys.acceptance import LHCbAcceptance
     from d02hhhh_toys.model import AmplitudeModel
@@ -140,40 +144,117 @@ def _peaked_or_flat_chunks(
     keep_components: bool,
 ) -> Iterator[RateSample]:
     """The accepted events of each bunch, until ``size`` events (the last bunch is cut)."""
+    for bunch in _shared_chunks(
+        model,
+        size,
+        seed,
+        {None: acceptance},
+        method,
+        tau_max,
+        bunch_size,
+        keep_components,
+    ):
+        if None in bunch:
+            yield bunch[None]
+
+
+def _shared_chunks(
+    model: AmplitudeModel,
+    size: int,
+    seed: int | np.random.SeedSequence,
+    acceptances: Mapping[Hashable, LHCbAcceptance | None],
+    method: str,
+    tau_max: float,
+    bunch_size: int,
+    keep_components: bool,
+) -> Iterator[dict[Hashable, RateSample]]:
+    """Accepted events of each bunch for several acceptance models, until each has ``size`` events.
+
+    All models see the same candidates, and the same random numbers in each bunch
+    (common random numbers). The amplitudes are evaluated once per bunch, for the
+    union of the events accepted by any model.
+    """
     if method == "peaked":
         domain = d02kkpipi.peaked_phase_space_generator(model.model)
     else:
         domain = d02kkpipi.phase_space_generator(model.model)
     seed_domain, seed_rng = _seeds(seed, 2)
     rng_domain, rng = NumpyUniformRNG(seed=seed_domain), np.random.default_rng(seed_rng)
-    count = 0
-    while count < size:
+    counts = dict.fromkeys(acceptances, 0)
+    while min(counts.values()) < size:
         sample = domain.generate(bunch_size, rng_domain)
         p = from_sample(sample)
         tau = _decay_times(bunch_size, tau_max, rng)
-        keep = (
-            np.ones(bunch_size, dtype=bool)
-            if acceptance is None
-            else acceptance.accept(p, tau, rng)
-        )
+        seed_acceptance = rng.integers(2**63)  # the same for every model
+        indices = {}
+        for key, acceptance in acceptances.items():
+            if counts[key] >= size:
+                continue
+            keep = (
+                np.ones(bunch_size, dtype=bool)
+                if acceptance is None
+                else acceptance.accept(p, tau, np.random.default_rng(seed_acceptance))
+            )
+            index = np.flatnonzero(keep)[: size - counts[key]]
+            counts[key] += len(index)
+            if len(index):
+                indices[key] = index
+        if not indices:
+            continue
+        union = functools.reduce(np.union1d, indices.values())
         w = (
             1 / domain.density_ratio(sample)
             if method == "peaked"
             else np.ones(bunch_size)
         )
-        n = min(int(keep.sum()), size - count)
-        index = np.flatnonzero(keep)[:n]
-        count += n
-        if n == 0:
-            continue
-        components, conjugates = model.component_pair(p[index])
-        yield RateSample(
-            tau=tau[index],
-            amplitude=components @ model.couplings,
-            amplitude_bar=conjugates @ model.couplings,
-            weight=w[index],
-            components=(components, conjugates) if keep_components else None,
-        )
+        components, conjugates = model.component_pair(p[union])
+        amplitude = components @ model.couplings
+        amplitude_bar = conjugates @ model.couplings
+        bunch = {}
+        for key, index in indices.items():
+            at = np.searchsorted(union, index)
+            bunch[key] = RateSample(
+                tau=tau[index],
+                amplitude=amplitude[at],
+                amplitude_bar=amplitude_bar[at],
+                weight=w[index],
+                components=(components[at], conjugates[at])
+                if keep_components
+                else None,
+            )
+        yield bunch
+
+
+def shared_normalisation_moments(
+    model: AmplitudeModel,
+    size: int,
+    seed: int | np.random.SeedSequence,
+    acceptances: Mapping[Hashable, LHCbAcceptance | None],
+    *,
+    method: str = "peaked",
+    tau_max: float = 20.0,
+    bunch_size: int = 200_000,
+    order: int = ORDER,
+    components: bool = False,
+) -> dict[Hashable, NormMoments]:
+    """:func:`normalisation_moments` for several acceptance models at once, sharing the candidates and the amplitudes.
+
+    Each model gets exactly the moments of ``normalisation_moments(...,
+    acceptance=acceptances[key])`` with the same arguments.
+    """
+    if method not in {"peaked", "flat"}:
+        msg = f"Shared normalisation samples need 'peaked' or 'flat', not {method!r}"
+        raise ValueError(msg)
+    totals: dict[Hashable, NormMoments] = {}
+    for bunch in _shared_chunks(
+        model, size, seed, acceptances, method, tau_max, bunch_size, components
+    ):
+        for key, sample in bunch.items():
+            moments = NormMoments.from_sample(
+                sample, order=order, components=components
+            )
+            totals[key] = totals[key] + moments if key in totals else moments
+    return totals
 
 
 def normalisation_moments(
@@ -205,10 +286,14 @@ def normalisation_moments(
             keep_components=components,
         )
         return NormMoments.from_sample(sample, order=order, components=components)
-    total = None
-    for chunk in _peaked_or_flat_chunks(
-        model, size, seed, acceptance, method, tau_max, bunch_size, components
-    ):
-        moments = NormMoments.from_sample(chunk, order=order, components=components)
-        total = moments if total is None else total + moments
-    return total
+    return shared_normalisation_moments(
+        model,
+        size,
+        seed,
+        {None: acceptance},
+        method=method,
+        tau_max=tau_max,
+        bunch_size=bunch_size,
+        order=order,
+        components=components,
+    )[None]

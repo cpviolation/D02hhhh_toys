@@ -26,7 +26,7 @@ with c = cosh(wτ/2), s = sinh(wτ/2)/w, and ζ = z_CP ± Δz.
 |---|---|---|
 | Storage per normalisation sample | (τ, A, Ā, w) per event: 5 GB at 10⁸ | 3 × 21 complex numbers and 21 τ moments: a few kB |
 | Likelihood call, 2 × 10⁵ data, 2 × 10⁶ normalisation events | 576 ms | 24 ms (data only) |
-| Generation | one process per base sample | chunks of `norm_chunk` = 250k events, each with its own seed, spread over all workers |
+| Generation | one process per base sample | chunks of `norm_chunk` = 250k events, each with its own seed, spread over all workers; all base samples share each chunk's candidates and amplitudes |
 
 - **Study modes:** each one is now a moment operation. A mode that replaces the decay
   times (`factorised`, `ignore_time`, `ignore_ps`) multiplies the zeroth moments by the
@@ -116,8 +116,8 @@ End to end, one core produces a normalisation event in 0.177 ms.
 
   | N per tag | n | σ_norm(y_CP), σ_norm(Δx) | Per base sample | 7 base samples on 46 cores |
   |---|---|---|---|---|
-  | 10⁵ | 4·10⁷ | 0.10, 0.09 | 2.0 CPU-h | ~20 min |
-  | 10⁵ | 10⁸ | 0.06, 0.06 | 4.9 CPU-h | ~45 min |
+  | 10⁵ | 4·10⁷ | 0.10, 0.09 | 0.9 CPU-h | ~8 min |
+  | 10⁵ | 10⁸ | 0.06, 0.06 | 2.2 CPU-h | ~20 min |
 
 ### On the GPU
 
@@ -144,7 +144,13 @@ NumPy, per accepted normalisation event:
     win.
 - **The GPU would pay** with few CPU cores, or if the acceptance and the phase-space
   generation were also ported to JAX.
-- **A cheaper gain, on any device:** every acceptance model sees the same candidates
-  (common random numbers). The 6 base samples with an acceptance could therefore share
-  one phase-space generation, and the amplitudes of their union of accepted events,
-  which overlap by more than 80%. That would roughly halve the total cost.
+- **Shared generation (implemented):** every acceptance model sees the same
+  candidates (common random numbers). In each chunk, all base samples therefore share:
+  - one phase-space generation;
+  - one amplitude evaluation, for the union of their accepted events, which overlap
+    by more than 80%.
+
+  This is `shared_normalisation_moments`, and the moments are unchanged
+  (`test_shared_base_samples_equal_separate_ones`). For the 7 base samples of the
+  default study, measured on one core of the full model, the cost per normalisation
+  event of each base sample drops from 0.165 ms to **0.078 ms (2.1× faster)**.

@@ -26,8 +26,9 @@ The scenario named ``closure`` must be ``full`` without overrides.
 so the scenarios differ only by their acceptance model. The emulator draws its random
 numbers per event and per batch, whatever passes. Each base sample (one per distinct
 acceptance model, and one without acceptance) is generated once per study, in chunks
-of ``norm_chunk`` events with one seed per chunk, shared by all acceptance models. The
-chunks run in parallel. The scenarios are derived from the base samples as decay-time
+of ``norm_chunk`` events with one seed per chunk. In each chunk all base samples
+share the phase-space candidates and the amplitude evaluations, and the chunks run in
+parallel. The scenarios are derived from the base samples as decay-time
 moments (:class:`.moments.NormMoments`), stored in ``norm/<scenario>.npz``. The
 couplings are fixed, so :math:`A_f` and :math:`\bar{A}_f` replace the :math:`A_k`.
 
@@ -78,7 +79,10 @@ from d02hhhh_toys.fit import PARAMETERS, SCALE, MixingNLL, RateSample, fit
 from d02hhhh_toys.generate import AmplitudeSampler, MixingGenerator
 from d02hhhh_toys.model import AmplitudeModel
 from d02hhhh_toys.moments import NormMoments, decay_time_moments
-from d02hhhh_toys.normalisation import normalisation_moments
+from d02hhhh_toys.normalisation import (
+    normalisation_moments,
+    shared_normalisation_moments,
+)
 from d02hhhh_toys.timeevolution import D0, D0BAR, MixingParameters
 
 MODES = ("full", "factorised", "ignore_time", "ignore_ps", "none")
@@ -187,31 +191,49 @@ def norm_chunks(config: StudyConfig) -> list[int]:
     return [size + (i < extra) for i in range(n)]
 
 
-def base_chunk(
+def base_chunks(
     model: AmplitudeModel,
     config: StudyConfig,
-    key: str,
+    keys: list[str],
     chunk: int,
     *,
     generator: MixingGenerator | None = None,
-) -> NormMoments:
-    """Moments of chunk ``chunk`` of a base sample: without acceptance, or after the analyst's acceptance ``key``.
+) -> dict[str, NormMoments]:
+    """Moments of chunk ``chunk`` of the base samples ``keys``: without acceptance, or after the analyst's acceptance ``key``.
 
-    A chunk has the same seed for every key (common random numbers).
+    A chunk has the same seed for every key (common random numbers). With the
+    ``peaked`` and ``flat`` methods all keys share the candidates and the amplitude
+    evaluations (:func:`.normalisation.shared_normalisation_moments`).
     """
     # entropy, not a SeedSequence object, so that every call sees the same numbers
     seed = [config.seed, 1, chunk]
-    acceptance = None
-    if key != NO_ACCEPTANCE:
-        overrides = json.loads(key)
-        acceptance = LHCbAcceptance(config.true_acceptance().with_overrides(overrides))
-    return normalisation_moments(
+    size = norm_chunks(config)[chunk]
+    true = config.true_acceptance()
+    acceptances = {
+        key: None
+        if key == NO_ACCEPTANCE
+        else LHCbAcceptance(true.with_overrides(json.loads(key)))
+        for key in keys
+    }
+    if config.norm_method == "proposal":
+        return {
+            key: normalisation_moments(
+                model,
+                size,
+                seed,
+                acceptance=acceptance,
+                method="proposal",
+                generator=generator,
+                tau_max=config.tau_max,
+            )
+            for key, acceptance in acceptances.items()
+        }
+    return shared_normalisation_moments(
         model,
-        norm_chunks(config)[chunk],
+        size,
         seed,
-        acceptance=acceptance,
+        acceptances,
         method=config.norm_method,
-        generator=generator,
         tau_max=config.tau_max,
     )
 
@@ -262,24 +284,24 @@ def scenario_normalisation(
     generator: MixingGenerator | None = None,
 ) -> NormMoments:
     """The normalisation moments of ``scenario`` (same seeds for every scenario)."""
-    chunks = range(len(norm_chunks(config)))
+    keys = base_keys(scenario)
+    done = [
+        base_chunks(model, config, keys, i, generator=generator)
+        for i in range(len(norm_chunks(config)))
+    ]
     bases = {
-        key: functools.reduce(
-            operator.add,
-            (base_chunk(model, config, key, i, generator=generator) for i in chunks),
-        )
-        for key in base_keys(scenario)
+        key: functools.reduce(operator.add, (d[key] for d in done)) for key in keys
     }
     return derive_normalisation(config, scenario, bases)
 
 
-def _base_worker(task: tuple[str, int]) -> tuple[str, int, NormMoments]:
-    key, chunk = task
+def _base_worker(task: tuple[list[str], int]) -> tuple[int, dict[str, NormMoments]]:
+    keys, chunk = task
     state = _STATE
-    moments = base_chunk(
-        state["model"], state["config"], key, chunk, generator=state["generator"]
+    moments = base_chunks(
+        state["model"], state["config"], keys, chunk, generator=state["generator"]
     )
-    return key, chunk, moments
+    return chunk, moments
 
 
 _MOMENT_FIELDS = ("aa", "bb", "ab", "tau_powers")
@@ -408,10 +430,11 @@ def run_study(
         # every chunk of every distinct base sample, in parallel; the scenarios are
         # derived from the sums
         keys = sorted({key for s in config.scenarios for key in base_keys(s)})
-        tasks = [(key, i) for key in keys for i in range(len(norm_chunks(config)))]
+        # one task per chunk, for all base samples: they share the candidates
+        tasks = [(keys, i) for i in range(len(norm_chunks(config)))]
         log(
             f"Normalisation: {len(keys)} base samples of {config.n_norm} events"
-            f" in {len(tasks)} chunks, for {len(names)} scenarios"
+            f" in {len(tasks)} shared chunks, for {len(names)} scenarios"
         )
         if workers > 1:
             context = multiprocessing.get_context("fork")
@@ -420,8 +443,9 @@ def run_study(
         else:
             done = list(map(_base_worker, tasks))
         chunks: dict[str, dict[int, NormMoments]] = {key: {} for key in keys}
-        for key, i, moments in done:
-            chunks[key][i] = moments
+        for i, moments in done:
+            for key in keys:
+                chunks[key][i] = moments[key]
         bases = {}
         for key in keys:
             bases[key], split = base_moments(chunks[key], max(k, 1))
