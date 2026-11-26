@@ -45,8 +45,12 @@ variance of the estimated mixing-dependent ratios Re⟨A*Ā⟩, Im⟨A*Ā⟩ and
   same ratios.
 
 **Finite-sample offset.** A finite normalisation sample gives a common offset of order
-σ_stat·√(N_data·v/N_norm), with v the variance factor above (about 0.7 for `peaked`).
-Keep N_norm ≫ N_data·v.
+σ_stat·√(N_data·v/N_norm). The variance factors above are for the normalisation ratios
+alone. The v of the fitted parameters is measured in [Phase 7b](moments.md): 3.8 for
+y_CP and 3.4 for Δx on the full model.
+
+**Evaluation.** Since Phase 7b the likelihood evaluates the normalisation from
+decay-time moments of the sample ([moments](moments.md)).
 
 ## Generation with acceptance
 

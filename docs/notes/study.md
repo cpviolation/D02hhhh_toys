@@ -49,10 +49,12 @@ passed the earlier steps, with random numbers drawn for the whole batch. Differe
 acceptance models therefore accept nearly the same events: 5% more IP resolution
 changes fewer than 20% of the accepted events (`test_common_random_numbers`).
 
-Each distinct *base* sample is generated once, in parallel: the true acceptance, each
-override, and no acceptance. The scenarios are derived from these, and stored as
-(τ, A_f, Ā_f, w) in `norm/<scenario>.npz`. The couplings are fixed, so A_f and Ā_f
-replace the A_k.
+Each distinct *base* sample is generated once: the true acceptance, each override, and
+no acceptance. It is generated in chunks of `norm_chunk` events, each with its own
+seed (the same for every acceptance model), spread over all workers. The scenarios are
+derived from the base samples and stored as decay-time moments in
+`norm/<scenario>.npz`, and the closure parts in `norm/closure.part<k>.npz`; see
+[moments](moments.md). The couplings are fixed, so A_f and Ā_f replace the A_k.
 
 ## Outputs
 
@@ -71,6 +73,9 @@ replace the A_k.
 All toys share the normalisation samples, so their finite size shifts every toy's fit
 by the same amount. That offset does not average away over toys.
 
+- **On the full model v is 3.8 for y_CP and 3.4 for Δx**; see [Phase 7b](moments.md),
+  which predicts v without toys. The rest of this section is the smoke-study finding
+  that led there.
 - **The size of this offset was a surprise.** In the smoke study (5 chains, 2000
   events per tag, inflated mixing), the closure pull of y_CP had a mean of
   −0.84 ± 0.14 with 40k normalisation events (N_norm/N_data = 20). It was +0.06 ± 0.14
@@ -82,9 +87,9 @@ by the same amount. That offset does not average away over toys.
   σ_stat.
   - In the smoke study σ_norm(y_CP) = 0.72 at 40k and 0.28 at 400k, consistent with
     the observed offsets and with 1/√N_norm.
-  - At equal N_norm/N_data, σ_norm(y_CP) ≈ √(v·N_data/N_norm) with **v ≈ 10**. x_CP,
-    Δx and Δy have much smaller v. y_CP is hit hardest because both tags share the
-    sample and a normalisation error moves them in the same direction.
+  - At equal N_norm/N_data, σ_norm(y_CP) ≈ √(v·N_data/N_norm) with v ≈ 10 in the
+    smoke model (7.3 predicted for its setup). y_CP is hit hard because both tags share
+    the sample and a normalisation error moves them in the same direction.
   - The spread over toys of a difference between parts does *not* measure the offset,
     because the offset is the same for every toy. A first version did that and
     reported 0.02.
@@ -92,12 +97,10 @@ by the same amount. That offset does not average away over toys.
   the scenarios' offsets nearly equal. This is the case for `full` with overrides and
   for `factorised`, and less so for `ignore_time` and `ignore_ps`, whose τ or points
   are redrawn.
-- **Consequence for Phase 8** (decision [P2](../decisions.md#p2-size-of-the-normalisation-sample)). For σ_norm(y_CP) ≲ 0.1, N_norm/N_data must be about
-  1000. At 10⁵ events per tag that is 10⁸ normalisation events: about 5 GB per base
-  sample, and 6 CPU-hours each at 0.22 ms per event. Alternatives:
-  - smaller toys, quoting absolute shifts (in units of 1e-3), which do not depend on
-    N_data;
-  - accepting σ_norm, which is reported, as a known common offset of the closure.
+- **Consequence for Phase 8** (decision [P2](../decisions.md#p2-size-of-the-normalisation-sample)).
+  For σ_norm ≲ 0.1, N_norm/N_data must be about 400. Since Phase 7b this costs only
+  the generation: about 6 CPU-h for all 7 base samples at 10⁵ events per tag, with
+  the shared generation.
 
 ## Cost
 
@@ -107,8 +110,8 @@ Measured on the full model, NumPy, one core:
 |---|---|
 | model and sampler setup | 30 s + 40 s per process |
 | generation with the default acceptance | 8.3 ms per accepted event |
-| normalisation sample (`peaked`) | 0.22 ms per accepted event |
-| fit of one scenario (2 × 10⁵ data, 2 × 10⁶ normalisation events) | ~1 min |
+| normalisation sample (`peaked`) | 0.078 ms per accepted event and base sample (shared), once per study |
+| likelihood call (2 × 10⁵ data events, any normalisation size) | 24 ms |
 
 Generation dominates: a 2 × 10⁵-event toy takes about 28 minutes per core, so the
 default study (100 toys) takes about an hour on 46 cores.

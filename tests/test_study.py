@@ -1,6 +1,8 @@
 """Phase 7: scenarios and the study driver."""
 
+import functools
 import json
+import operator
 from pathlib import Path
 
 import numpy as np
@@ -8,16 +10,20 @@ import pytest
 
 from conftest import SUBSET
 from d02hhhh_toys.acceptance import LHCbAcceptance
-from d02hhhh_toys.normalisation import normalisation_sample
+from d02hhhh_toys.moments import decay_time_moments
+from d02hhhh_toys.normalisation import normalisation_moments, normalisation_sample
 from d02hhhh_toys.study import (
     CLOSURE,
     Scenario,
     StudyConfig,
-    load_rate_sample,
+    base_chunks,
+    base_moments,
+    load_moments,
+    norm_chunks,
     norm_offset,
     read_records,
     run_study,
-    save_rate_sample,
+    save_moments,
     scenario_normalisation,
     summarise_records,
 )
@@ -49,6 +55,7 @@ def make_config(**changes):
             },
         ],
         "norm_check_parts": 2,
+        "norm_chunk": 2000,
     }
     values.update(changes)
     return StudyConfig(**values)
@@ -92,46 +99,99 @@ def norms(subset_model):
     }
 
 
+def test_norm_chunks():
+    config = make_config(n_norm=6001, norm_chunk=2000, norm_check_parts=2)
+    sizes = norm_chunks(config)
+    assert len(sizes) == 4  # a multiple of the parts
+    assert sum(sizes) == 6001
+    assert max(sizes) - min(sizes) <= 1
+    assert len(norm_chunks(make_config(norm_check_parts=0))) == 3
+
+
 def test_scenario_normalisation_modes(subset_model, norms):
     config = make_config()
     full, none = norms[CLOSURE], norms["none"]
-    direct = normalisation_sample(
-        subset_model,
-        config.n_norm,
-        np.random.SeedSequence([config.seed, 1]),
-        acceptance=LHCbAcceptance(config.true_acceptance()),
+    acceptance = LHCbAcceptance(config.true_acceptance())
+    direct = functools.reduce(
+        operator.add,
+        (
+            normalisation_moments(
+                subset_model, size, [config.seed, 1, i], acceptance=acceptance
+            )
+            for i, size in enumerate(norm_chunks(config))
+        ),
     )
-    np.testing.assert_array_equal(full.tau, direct.tau)
-    # factorised: the same decay times, permuted; the phase-space points are kept
+    assert full.count == config.n_norm
+    np.testing.assert_allclose(full.aa, direct.aa, rtol=1e-12)
+    assert full.mean_tau_powers[1] > 1.5  # the acceptance removes short decay times
+    # factorised: the accepted points, with the accepted decay times made independent
     f = norms["factorised"]
-    np.testing.assert_array_equal(np.sort(f.tau), np.sort(full.tau))
-    assert not np.array_equal(f.tau, full.tau)
-    np.testing.assert_array_equal(f.amplitude, full.amplitude)
-    # ignore_time: the accepted phase-space points with new decay times from e^-tau
+    np.testing.assert_array_equal(f.aa[0], full.aa[0])
+    np.testing.assert_allclose(f.aa[3], full.aa[0] * full.mean_tau_powers[3])
+    # ignore_time: the accepted points with decay times from e^-tau
     t = norms["ignore_time"]
-    np.testing.assert_array_equal(t.amplitude, full.amplitude)
-    assert abs(t.tau.mean() - 1) < 4 / np.sqrt(len(t))
-    assert full.tau.mean() > 1.5  # the acceptance removes short decay times
-    # ignore_ps: the accepted decay times with points drawn without acceptance
+    np.testing.assert_allclose(
+        t.ab[2], full.ab[0] * decay_time_moments(config.tau_max, 2)[2]
+    )
+    # ignore_ps: the points without acceptance, with the accepted decay times
     p = norms["ignore_ps"]
-    np.testing.assert_array_equal(p.amplitude, none.amplitude)
-    np.testing.assert_array_equal(np.sort(p.tau), np.sort(full.tau))
-    assert abs(none.tau.mean() - 1) < 4 / np.sqrt(len(none))
+    np.testing.assert_array_equal(p.bb[0], none.bb[0])
+    np.testing.assert_allclose(p.mean_tau_powers, full.mean_tau_powers)
+    assert abs(none.mean_tau_powers[1] - 1) < 4 / np.sqrt(none.count)
 
 
-def test_common_random_numbers(norms):
+def test_common_random_numbers(subset_model):
     """An override changes few of the accepted events: most decay times are shared."""
-    shared = np.isin(norms["ip+5%"].tau, norms[CLOSURE].tau).mean()
-    assert shared > 0.8
+    config = make_config()
+    true = config.true_acceptance()
+    taus = [
+        normalisation_sample(
+            subset_model,
+            3000,
+            [config.seed, 1, 0],
+            acceptance=LHCbAcceptance(true.with_overrides(overrides)),
+        ).tau
+        for overrides in ({}, {"ip_resolution.scale": 1.05})
+    ]
+    assert np.isin(taus[1], taus[0]).mean() > 0.8
 
 
-def test_rate_sample_round_trip(norms, tmp_path):
-    save_rate_sample(norms[CLOSURE], tmp_path / "x.npz")
-    back = load_rate_sample(tmp_path / "x.npz")
-    for name in ("tau", "amplitude", "amplitude_bar", "weight"):
+def test_parts_and_chunks(subset_model):
+    config = make_config(n_norm=4000, norm_chunk=1000, norm_check_parts=2)
+    chunks = {
+        i: base_chunks(subset_model, config, ["{}"], i)["{}"]
+        for i in range(len(norm_chunks(config)))
+    }
+    total, parts = base_moments(chunks, 2)
+    assert [p.count for p in parts] == [2000, 2000]
+    np.testing.assert_allclose((parts[0] + parts[1]).aa, total.aa)
+    np.testing.assert_array_equal(parts[1].aa, (chunks[1] + chunks[3]).aa)
+
+
+def test_shared_base_samples_equal_separate_ones(subset_model):
+    """Sharing candidates and amplitudes between acceptance models changes no moment."""
+    config = make_config(n_norm=3000, norm_chunk=3000, norm_check_parts=0)
+    keys = ['{"ip_resolution.scale": 1.05}', "{}", "none"]
+    shared = base_chunks(subset_model, config, keys, 0)
+    for key in keys:
+        alone = base_chunks(subset_model, config, [key], 0)[key]
+        assert shared[key].count == 3000
+        for name in ("aa", "bb", "ab", "tau_powers"):
+            np.testing.assert_allclose(
+                getattr(shared[key], name), getattr(alone, name), rtol=1e-12
+            )
+
+
+def test_moments_round_trip(norms, tmp_path):
+    save_moments(norms[CLOSURE], tmp_path / "x.npz")
+    back = load_moments(tmp_path / "x.npz")
+    for name in ("aa", "bb", "ab", "tau_powers", "weight_sum", "count", "tau_max"):
         np.testing.assert_array_equal(
             getattr(back, name), getattr(norms[CLOSURE], name)
         )
+    np.savez(tmp_path / "old.npz", tau=np.ones(3))
+    with pytest.raises(ValueError, match="earlier version"):
+        load_moments(tmp_path / "old.npz")
 
 
 def _record(toy, closure, other, parts):
@@ -187,7 +247,7 @@ def test_run_study_and_resume(tmp_path):
     ):
         assert (tmp_path / name).exists()
     assert sorted(p.stem for p in (tmp_path / "norm").glob("*.npz")) == sorted(
-        s.name for s in config.scenarios
+        [s.name for s in config.scenarios] + [f"{CLOSURE}.part0", f"{CLOSURE}.part1"]
     )
     records = read_records(tmp_path)
     assert [r["toy"] for r in records] == [0, 1]

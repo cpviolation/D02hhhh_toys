@@ -24,8 +24,12 @@ The scenario named ``closure`` must be ``full`` without overrides.
 
 **Common random numbers.** Every scenario's normalisation sample uses the same seed,
 so the scenarios differ only by their acceptance model. The emulator draws its random
-numbers per event and per batch, whatever passes. The samples are built once per study
-and stored as :math:`(\tau, A_f, \bar{A}_f, w)` in ``norm/<scenario>.npz``. The
+numbers per event and per batch, whatever passes. Each base sample (one per distinct
+acceptance model, and one without acceptance) is generated once per study, in chunks
+of ``norm_chunk`` events with one seed per chunk. In each chunk all base samples
+share the phase-space candidates and the amplitude evaluations, and the chunks run in
+parallel. The scenarios are derived from the base samples as decay-time
+moments (:class:`.moments.NormMoments`), stored in ``norm/<scenario>.npz``. The
 couplings are fixed, so :math:`A_f` and :math:`\bar{A}_f` replace the :math:`A_k`.
 
 **Outputs** in the study directory:
@@ -43,7 +47,7 @@ finite size gives an offset common to all toys, of order
 1 (a 0.8 :math:`\sigma` offset of :math:`y_{CP}` was seen with
 :math:`N_\mathrm{norm}/N_\mathrm{data} = 20`). It is therefore measured: each toy is
 also fitted with each of ``norm_check_parts`` = :math:`K` disjoint parts of the
-``closure`` normalisation sample. The shift of part :math:`k`, averaged over the toys,
+``closure`` normalisation sample (chunk index modulo :math:`K`). The shift of part :math:`k`, averaged over the toys,
 :math:`m_k`, is one draw of the offset of a sample :math:`K` times smaller, so the
 summary reports :math:`\sigma_\mathrm{norm} = \mathrm{sd}_k(m_k)/\sqrt{K}`, in units
 of :math:`\sigma_\mathrm{stat}`: the expected size of the common offset of the closure.
@@ -56,8 +60,11 @@ offsets of the scenarios nearly the same.
 from __future__ import annotations
 
 import dataclasses
+import functools
 import json
+import math
 import multiprocessing
+import operator
 import threading
 import time
 from dataclasses import dataclass, field
@@ -71,7 +78,11 @@ from d02hhhh_toys.acceptance import AcceptanceConfig, LHCbAcceptance
 from d02hhhh_toys.fit import PARAMETERS, SCALE, MixingNLL, RateSample, fit
 from d02hhhh_toys.generate import AmplitudeSampler, MixingGenerator
 from d02hhhh_toys.model import AmplitudeModel
-from d02hhhh_toys.normalisation import normalisation_sample
+from d02hhhh_toys.moments import NormMoments, decay_time_moments
+from d02hhhh_toys.normalisation import (
+    normalisation_moments,
+    shared_normalisation_moments,
+)
 from d02hhhh_toys.timeevolution import D0, D0BAR, MixingParameters
 
 MODES = ("full", "factorised", "ignore_time", "ignore_ps", "none")
@@ -108,6 +119,7 @@ class StudyConfig:
     tau_max: float = 20.0
     sampler_safety: float = 1.2
     norm_check_parts: int = 4  # K of the normalisation-offset check (0: none)
+    norm_chunk: int = 250_000  # accepted normalisation events per chunk (parallel unit)
     base_dir: str = "."
 
     def __post_init__(self) -> None:
@@ -145,12 +157,7 @@ class StudyConfig:
         return dataclasses.asdict(self)
 
 
-# --- normalisation samples
-
-
-def _decay_times(size: int, tau_max: float, rng: np.random.Generator) -> np.ndarray:
-    u = rng.uniform(size=size)
-    return -np.log1p(-u * -np.expm1(-tau_max))
+# --- normalisation samples, as decay-time moments
 
 
 #: key of the base sample without acceptance
@@ -172,54 +179,101 @@ def base_keys(scenario: Scenario) -> list[str]:
     return keys
 
 
-def base_sample(
+def norm_chunks(config: StudyConfig) -> list[int]:
+    """Number of accepted events of each chunk of a base sample.
+
+    The number of chunks is a multiple of the ``norm_check_parts``, so that each part
+    is a set of whole chunks; the sizes add up to ``n_norm``.
+    """
+    k = max(config.norm_check_parts, 1)
+    n = k * math.ceil(config.n_norm / (k * config.norm_chunk))
+    size, extra = divmod(config.n_norm, n)
+    return [size + (i < extra) for i in range(n)]
+
+
+def base_chunks(
     model: AmplitudeModel,
     config: StudyConfig,
-    key: str,
+    keys: list[str],
+    chunk: int,
     *,
     generator: MixingGenerator | None = None,
-) -> RateSample:
-    """A base normalisation sample: without acceptance, or after the analyst's acceptance ``key``.
+) -> dict[str, NormMoments]:
+    """Moments of chunk ``chunk`` of the base samples ``keys``: without acceptance, or after the analyst's acceptance ``key``.
 
-    Every base sample uses the same seed (common random numbers).
+    A chunk has the same seed for every key (common random numbers). With the
+    ``peaked`` and ``flat`` methods all keys share the candidates and the amplitude
+    evaluations (:func:`.normalisation.shared_normalisation_moments`).
     """
     # entropy, not a SeedSequence object, so that every call sees the same numbers
-    seed = [config.seed, 1]
-    acceptance = None
-    if key != NO_ACCEPTANCE:
-        overrides = json.loads(key)
-        acceptance = LHCbAcceptance(config.true_acceptance().with_overrides(overrides))
-    return normalisation_sample(
+    seed = [config.seed, 1, chunk]
+    size = norm_chunks(config)[chunk]
+    true = config.true_acceptance()
+    acceptances = {
+        key: None
+        if key == NO_ACCEPTANCE
+        else LHCbAcceptance(true.with_overrides(json.loads(key)))
+        for key in keys
+    }
+    if config.norm_method == "proposal":
+        return {
+            key: normalisation_moments(
+                model,
+                size,
+                seed,
+                acceptance=acceptance,
+                method="proposal",
+                generator=generator,
+                tau_max=config.tau_max,
+            )
+            for key, acceptance in acceptances.items()
+        }
+    return shared_normalisation_moments(
         model,
-        config.n_norm,
+        size,
         seed,
-        acceptance=acceptance,
+        acceptances,
         method=config.norm_method,
-        generator=generator,
         tau_max=config.tau_max,
     )
 
 
+def base_moments(
+    chunks: dict[int, NormMoments], parts: int
+) -> tuple[NormMoments, list[NormMoments]]:
+    """The whole base sample, and its ``parts`` disjoint parts (chunk index modulo ``parts``)."""
+    ordered = [chunks[i] for i in sorted(chunks)]
+    total = functools.reduce(operator.add, ordered)
+    split = [functools.reduce(operator.add, ordered[k::parts]) for k in range(parts)]
+    return total, split
+
+
 def derive_normalisation(
-    config: StudyConfig, scenario: Scenario, bases: dict[str, RateSample]
-) -> RateSample:
-    """The normalisation sample of ``scenario`` from its base samples (:func:`base_keys`)."""
+    config: StudyConfig, scenario: Scenario, bases: dict[str, NormMoments]
+) -> NormMoments:
+    r"""The normalisation moments of ``scenario`` from its base samples (:func:`base_keys`).
+
+    Each new decay time is independent of its event, so a mode that replaces the decay
+    times multiplies the zeroth moments by those of the new decay times
+    (:meth:`.NormMoments.with_decay_time_moments`):
+
+    - ``factorised``: the decay times of the accepted events;
+    - ``ignore_time``: :math:`e^{-\tau}` on :math:`[0, \tau_\max)`;
+    - ``ignore_ps``: the points without acceptance, with the decay times of the accepted
+      events.
+    """
     if scenario.mode == "none":
         return bases[NO_ACCEPTANCE]
     sample = bases[acceptance_key(scenario.overrides)]
-    rng = np.random.default_rng([config.seed, 2])
     if scenario.mode == "full":
         return sample
     if scenario.mode == "factorised":
-        tau = sample.tau[rng.permutation(len(sample))]
-        return dataclasses.replace(sample, tau=tau)
+        return sample.with_decay_time_moments(sample.mean_tau_powers, sample.tau_max)
     if scenario.mode == "ignore_time":
-        return dataclasses.replace(
-            sample, tau=_decay_times(len(sample), config.tau_max, rng)
-        )
-    # ignore_ps: the accepted decay times, with phase-space points without acceptance
+        moments = decay_time_moments(config.tau_max, sample.order)
+        return sample.with_decay_time_moments(moments, config.tau_max)
     flat = bases[NO_ACCEPTANCE]
-    return dataclasses.replace(flat, tau=sample.tau[rng.permutation(len(sample))])
+    return flat.with_decay_time_moments(sample.mean_tau_powers, sample.tau_max)
 
 
 def scenario_normalisation(
@@ -228,37 +282,55 @@ def scenario_normalisation(
     scenario: Scenario,
     *,
     generator: MixingGenerator | None = None,
-) -> RateSample:
-    """The normalisation sample of ``scenario`` (same seed for every scenario)."""
+) -> NormMoments:
+    """The normalisation moments of ``scenario`` (same seeds for every scenario)."""
+    keys = base_keys(scenario)
+    done = [
+        base_chunks(model, config, keys, i, generator=generator)
+        for i in range(len(norm_chunks(config)))
+    ]
     bases = {
-        key: base_sample(model, config, key, generator=generator)
-        for key in base_keys(scenario)
+        key: functools.reduce(operator.add, (d[key] for d in done)) for key in keys
     }
     return derive_normalisation(config, scenario, bases)
 
 
-def _base_worker(key: str) -> tuple[str, RateSample]:
+def _base_worker(task: tuple[list[str], int]) -> tuple[int, dict[str, NormMoments]]:
+    keys, chunk = task
     state = _STATE
-    return key, base_sample(
-        state["model"], state["config"], key, generator=state["generator"]
+    moments = base_chunks(
+        state["model"], state["config"], keys, chunk, generator=state["generator"]
     )
+    return chunk, moments
 
 
-def save_rate_sample(sample: RateSample, path: Path) -> None:
+_MOMENT_FIELDS = ("aa", "bb", "ab", "tau_powers")
+
+
+def save_moments(moments: NormMoments, path: Path) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    weight = np.ones(len(sample)) if sample.weight is None else sample.weight
     np.savez(
         path,
-        tau=sample.tau,
-        amplitude=sample.amplitude,
-        amplitude_bar=sample.amplitude_bar,
-        weight=weight,
+        **{name: getattr(moments, name) for name in _MOMENT_FIELDS},
+        scalars=np.array([moments.weight_sum, moments.count, moments.tau_max]),
     )
 
 
-def load_rate_sample(path: Path) -> RateSample:
+def load_moments(path: Path) -> NormMoments:
     with np.load(path) as f:
-        return RateSample(f["tau"], f["amplitude"], f["amplitude_bar"], f["weight"])
+        if "aa" not in f:
+            msg = (
+                f"{path} is a per-event normalisation sample from an earlier version;"
+                " delete the norm/ directory to rebuild it as moments"
+            )
+            raise ValueError(msg)
+        weight_sum, count, tau_max = f["scalars"]
+        return NormMoments(
+            **{name: f[name] for name in _MOMENT_FIELDS},
+            weight_sum=float(weight_sum),
+            count=int(count),
+            tau_max=float(tau_max),
+        )
 
 
 # --- toys
@@ -281,7 +353,7 @@ def run_toy(index: int) -> dict[str, Any]:
     config: StudyConfig = _STATE["config"]
     generator: MixingGenerator = _STATE["generator"]
     acceptance: LHCbAcceptance = _STATE["acceptance"]
-    norms: dict[str, RateSample] = _STATE["norms"]
+    norms: dict[str, NormMoments] = _STATE["norms"]
     start = time.time()
     seeds = np.random.SeedSequence([config.seed, 0, index]).spawn(2)
     data = {
@@ -297,7 +369,7 @@ def run_toy(index: int) -> dict[str, Any]:
         nll = MixingNLL(data, {D0: norm, D0BAR: norm})
         results[scenario.name] = _fit_record(fit(nll, config.parameters))
     parts = []
-    for norm in _parts(norms[CLOSURE], config.norm_check_parts):
+    for norm in _STATE["closure_parts"]:
         nll = MixingNLL(data, {D0: norm, D0BAR: norm})
         parts.append(_fit_record(fit(nll, config.parameters)))
     return {
@@ -309,19 +381,6 @@ def run_toy(index: int) -> dict[str, Any]:
         "results": results,
         "closure_parts": parts,
     }
-
-
-def _parts(sample: RateSample, k: int) -> list[RateSample]:
-    """``k`` disjoint, equal parts of a normalisation sample (independent events)."""
-    n = len(sample) // k if k else 0
-
-    def part(sl: slice) -> RateSample:
-        weight = None if sample.weight is None else sample.weight[sl]
-        return RateSample(
-            sample.tau[sl], sample.amplitude[sl], sample.amplitude_bar[sl], weight
-        )
-
-    return [part(slice(i * n, (i + 1) * n)) for i in range(k)]
 
 
 def _done(path: Path) -> set[int]:
@@ -358,33 +417,52 @@ def run_study(
         generator=generator,
         acceptance=LHCbAcceptance(config.true_acceptance()),
     )
-    norms = {}
-    missing = []
-    for scenario in config.scenarios:
-        path = outdir / "norm" / f"{scenario.name}.npz"
-        if path.exists():
-            norms[scenario.name] = load_rate_sample(path)
-        else:
-            missing.append(scenario)
-    # each distinct base sample once, in parallel; the scenarios are derived from them
-    keys = sorted({key for scenario in missing for key in base_keys(scenario)})
-    if keys:
-        log(f"Normalisation: {len(keys)} base samples for {len(missing)} scenarios")
-    if keys and workers > 1:
-        context = multiprocessing.get_context("fork")
-        with context.Pool(min(workers, len(keys))) as pool:
-            bases = dict(pool.map(_base_worker, keys))
+    norm_dir = outdir / "norm"
+    k = config.norm_check_parts
+    names = [s.name for s in config.scenarios]
+    part_names = [f"{CLOSURE}.part{i}" for i in range(k if k > 1 else 0)]
+    paths = {name: norm_dir / f"{name}.npz" for name in [*names, *part_names]}
+    if all(path.exists() for path in paths.values()):
+        log("Normalisation: reusing the moments in norm/")
+        norms = {name: load_moments(paths[name]) for name in names}
+        parts = [load_moments(paths[name]) for name in part_names]
     else:
-        bases = dict(map(_base_worker, keys))
-    for scenario in missing:
-        norms[scenario.name] = derive_normalisation(config, scenario, bases)
-        save_rate_sample(norms[scenario.name], outdir / "norm" / f"{scenario.name}.npz")
+        # every chunk of every distinct base sample, in parallel; the scenarios are
+        # derived from the sums
+        keys = sorted({key for s in config.scenarios for key in base_keys(s)})
+        # one task per chunk, for all base samples: they share the candidates
+        tasks = [(keys, i) for i in range(len(norm_chunks(config)))]
         log(
-            f"Normalisation sample: {scenario.name} ({scenario.mode},"
-            f" {scenario.overrides or 'no overrides'}), {len(norms[scenario.name])} events"
+            f"Normalisation: {len(keys)} base samples of {config.n_norm} events"
+            f" in {len(tasks)} shared chunks, for {len(names)} scenarios"
         )
-    del bases
+        if workers > 1:
+            context = multiprocessing.get_context("fork")
+            with context.Pool(min(workers, len(tasks))) as pool:
+                done = pool.map(_base_worker, tasks)
+        else:
+            done = list(map(_base_worker, tasks))
+        chunks: dict[str, dict[int, NormMoments]] = {key: {} for key in keys}
+        for i, moments in done:
+            for key in keys:
+                chunks[key][i] = moments[key]
+        bases = {}
+        for key in keys:
+            bases[key], split = base_moments(chunks[key], max(k, 1))
+            if key == acceptance_key({}):
+                parts = split if k > 1 else []
+        norms = {}
+        for scenario in config.scenarios:
+            norms[scenario.name] = derive_normalisation(config, scenario, bases)
+            log(
+                f"Normalisation: {scenario.name} ({scenario.mode},"
+                f" {scenario.overrides or 'no overrides'}),"
+                f" {norms[scenario.name].count} events"
+            )
+        for name, moments in [*norms.items(), *zip(part_names, parts, strict=True)]:
+            save_moments(moments, paths[name])
     _STATE["norms"] = norms
+    _STATE["closure_parts"] = parts
     toys_path = outdir / "toys.jsonl"
     todo = [i for i in range(config.n_toys) if i not in _done(toys_path)]
     log(f"{len(todo)} toys to run, {config.n_toys - len(todo)} already done")

@@ -16,6 +16,7 @@ nav:
       - "Phase 5: acceptance": notes/acceptance.md
       - "Phase 6: normalisation": notes/normalisation.md
       - "Phase 7: study driver": notes/study.md
+      - "Phase 7b: moments and v": notes/moments.md
 
 theme:
   name: material
