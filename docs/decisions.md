@@ -41,32 +41,36 @@ true one by a single parameter.
 
 ### P2 — Size of the normalisation sample
 
-!!! question "Needed before Phase 8"
-    This sets the cost of the study and how precisely the closure can be tested.
+!!! question "Needed before Phase 8 (revised on 2026-11-26 after Phase 7b)"
+    This sets how precisely the closure can be tested. Since Phase 7b, a large sample
+    is cheap: see [moments and v](notes/moments.md).
 
 - **The problem:** all toys share one normalisation sample, so its statistical
   fluctuation shifts every toy's fit by the same amount. This common offset does not
   average away over toys.
-- **Its size:** σ_norm ≈ √(v·N_data/N_norm) in units of σ_stat, with v ≈ 10 for y_CP
-  (measured in the smoke study; see [study notes](notes/study.md)). x_CP, Δx and Δy
-  have a much smaller v.
-- **Current default:** N_norm/N_data = 2·10⁶/10⁵ = 20, which gives σ_norm(y_CP) ≈ 0.7.
+- **Its size:** σ_norm = √(v·N/n) in units of σ_stat, for N data events per tag and n
+  normalisation events.
+- **v on the full model:** 3.8 for y_CP, 3.4 for Δx, 0.4 for Δy and ≈ 0 for x_CP. This
+  is predicted and validated against fits. The earlier "v ≈ 10" came from the 5-chain
+  smoke model.
+- **Current default:** n/N = 20, which gives σ_norm(y_CP) ≈ 0.43.
+- **Cost now:**
+  - the fits do not depend on n, and nothing per event is stored;
+  - generation costs 0.126 ms per normalisation event, and is spread over all workers.
 
-| Option | Setup | σ_norm(y_CP) | Cost |
+| Option | Setup | σ_norm(y_CP), σ_norm(Δx) | Normalisation cost (7 base samples) |
 |---|---|---|---|
-| **A** | 10⁵ per tag, N_norm = 10⁸ (ratio 1000) | ≈ 0.1 | Per base sample: ~5 GB and ~6 CPU-h. There are 7 base samples: true, 5 overrides, none. Each fit is ~50× slower (≈ 50 min per scenario and toy), so 10 scenarios × 100 toys ≈ 800 CPU-h. |
-| **B** (recommended) | 10⁴ per tag, N_norm = 10⁷ (ratio 1000) | ≈ 0.1 | Small, similar to the current default. Shifts are quoted in absolute units (1e-3), which do not depend on N_data. |
-| **C** | Keep 10⁵ per tag and N_norm = 2·10⁶ | ≈ 0.7 | Current cost. σ_norm is reported and quoted as a known common offset of the closure. |
+| **A** (recommended) | 10⁵ per tag, n = 4·10⁷ | 0.10, 0.09 | 10 CPU-h, ~15 min on 46 cores |
+| **B** | 10⁵ per tag, n = 10⁸ | 0.06, 0.06 | 25 CPU-h, ~35 min on 46 cores |
+| **C** | Keep n = 2·10⁶ | 0.43, 0.41 | negligible; quote σ_norm as a known offset |
 
 - **Effect on paired shifts:** the common random numbers make the offset almost the
-  same for every scenario. It therefore largely cancels in the paired shifts of the
-  `full`-mode overrides and of `factorised`. It cancels less for `ignore_time` and
-  `ignore_ps`, which redraw τ or the points.
-- **Recommendation:** B.
-  - It tests the closure to ~0.1σ.
-  - The absolute shifts are what carries over to the real analysis.
-  - A could follow for one or two scenarios, if a shift turns out to depend on the
-    sample size.
+  same for every scenario, so it largely cancels in the paired shifts. It cancels less
+  for `ignore_time` and `ignore_ps`.
+- **Recommendation:** A. The cost is small next to the toy generation, which takes
+  about an hour for 100 toys on 46 cores. B is cheap enough if the closure has to be
+  tested more precisely. The earlier option of smaller toys (10⁴ per tag) is no longer
+  needed.
 
 ### P3 — Inflated mixing values for the Phase 8 cross-check
 
@@ -102,6 +106,7 @@ true one by a single parameter.
 | C10 | 2026-11-25 | Require the decay vertex to be inside the RF foil: ρ < 3.5 mm from the beam line. | `decay_vertex.rho_max_um` |
 | C11 | 2026-11-26 | Keep the toy D0 production spectrum and the other toy acceptance values for now. They are to be tuned on Run 3 simulation later. | `configs/acceptance/base.yaml` |
 | C12 | 2026-11-26 | Use one branch and one pull request per phase, from Phase 7 on. | [CLAUDE.md](https://github.com/cpviolation/D02hhhh_toys/blob/main/CLAUDE.md) |
+| C13 | 2026-11-26 | Evaluate the normalisation from decay-time moments, generated in chunks (Phase 7b), then measure v. | `moments.py`, `variance.py`, [moments](notes/moments.md) |
 
 ## Corrections to the plan
 
@@ -111,5 +116,8 @@ These are places where the code deliberately departs from `TOY_STUDY_PLAN.md`.
   not Γ(1 − y_CP) as the plan says. See [conventions](notes/conventions.md).
 - **The normalisation density:** the plan has flat phase space. The default is the
   peaked phase space (C6).
-- **The normalisation size:** the plan asks for N_norm ≫ N_data. The measured v ≈ 10
-  for y_CP makes the requirement stricter (P2).
+- **The normalisation size:** the plan asks for N_norm ≫ N_data. The measured v ≈ 3.8
+  for y_CP and 3.4 for Δx make it N_norm ≈ 400 N_data for a 0.1σ offset (P2).
+- **The normalisation evaluation:** the normalisation is evaluated from decay-time
+  moments, not from the events. This is exact up to a truncation below 1e-15
+  ([moments](notes/moments.md)).

@@ -21,6 +21,13 @@ normalisation is estimated up to a constant factor, which does not change the fi
 Each tag has its own normalisation (the same sample may serve both). The mixing
 parameters are fitted in units of :data:`SCALE` = 1e-3.
 
+The normalisation sum is evaluated from the decay-time moments of the sample
+(:class:`.moments.NormMoments`), computed once: the cost of a call then does not depend
+on the size of the normalisation sample. A normalisation may be given as a
+:class:`RateSample` (its moments are computed on construction) or directly as
+:class:`.moments.NormMoments`. ``moments=False`` sums over the events instead, as a
+cross-check.
+
 - :class:`MixingNLL`: couplings fixed (the default), so only :math:`A_f` and
   :math:`\bar{A}_f` are needed per event, precomputed once per toy.
 - :class:`CouplingMixingNLL`: some couplings :math:`c_k` free as well, from the
@@ -37,6 +44,7 @@ from typing import TYPE_CHECKING
 import iminuit
 import numpy as np
 
+from d02hhhh_toys.moments import TRUNCATION_TOLERANCE, NormMoments
 from d02hhhh_toys.timeevolution import MixingParameters, rate
 
 if TYPE_CHECKING:
@@ -84,19 +92,48 @@ def _check_tags(
         raise ValueError(msg)
 
 
+Normalisation = RateSample | NormMoments
+
+
+def _as_moments(
+    norm: Normalisation, *, moments: bool, components: bool = False
+) -> Normalisation:
+    if not moments:
+        if isinstance(norm, NormMoments):
+            msg = "moments=False needs the normalisation events, not their moments"
+            raise TypeError(msg)
+        return norm
+    if isinstance(norm, NormMoments):
+        if components and norm.n_components == 1:
+            msg = "Free couplings need moments of the component amplitudes"
+            raise ValueError(msg)
+        return norm
+    return NormMoments.from_sample(norm, components=components)
+
+
 def _tag_nll(
     p: MixingParameters,
     tag: int,
     data: tuple[np.ndarray, np.ndarray, np.ndarray],
-    norm: tuple[np.ndarray, np.ndarray, np.ndarray],
-    weight: np.ndarray | None,
+    norm: Normalisation,
+    couplings: np.ndarray | None = None,
 ) -> float:
-    # far from the minimum (e.g. a Migrad line search) cosh/sinh can overflow: return a
-    # large finite value instead of NaN, which Migrad handles as a bad step
+    # far from the minimum (e.g. a Migrad line search) cosh/sinh can overflow, or the
+    # moment series no longer converges: return a large finite value instead, which
+    # Migrad handles as a bad step
     with np.errstate(over="ignore", invalid="ignore", divide="ignore"):
         r_data = rate(*data, p, tag, relative_to_decay=True)
-        r_norm = rate(*norm, p, tag, relative_to_decay=True)
-        mean = np.average(r_norm, weights=weight)
+        if isinstance(norm, NormMoments):
+            if norm.truncation(p) > TRUNCATION_TOLERANCE:
+                return NON_FINITE_PENALTY
+            mean = norm.mean(p, tag, couplings)
+        else:
+            if couplings is None:
+                a, abar = norm.amplitude, norm.amplitude_bar
+            else:
+                a, abar = norm.components[0] @ couplings, norm.components[1] @ couplings
+            r_norm = rate(norm.tau, a, abar, p, tag, relative_to_decay=True)
+            mean = np.average(r_norm, weights=norm.weight)
         value = -(np.sum(np.log(r_data)) - len(data[0]) * np.log(mean))
     return float(value) if np.isfinite(value) else NON_FINITE_PENALTY
 
@@ -107,17 +144,29 @@ class MixingNLL:
     Args:
         data: Data sample of each tag (``+1``, ``-1``).
 
-        normalisation: Normalisation sample of each tag.
+        normalisation: Normalisation sample of each tag, or its moments.
+
+        moments: Evaluate the normalisation from moments (default) or by summing over
+            the events.
     """
 
     names: tuple[str, ...] = PARAMETERS
 
     def __init__(
-        self, data: Mapping[int, RateSample], normalisation: Mapping[int, RateSample]
+        self,
+        data: Mapping[int, RateSample],
+        normalisation: Mapping[int, Normalisation],
+        *,
+        moments: bool = True,
     ) -> None:
         _check_tags(data, normalisation)
         self.data = dict(data)
-        self.normalisation = dict(normalisation)
+        # one set of moments per distinct sample (both tags usually share it)
+        cache: dict[int, Normalisation] = {}
+        self.normalisation = {
+            tag: cache.setdefault(id(n), _as_moments(n, moments=moments))
+            for tag, n in normalisation.items()
+        }
 
     def initial(self, start: MixingParameters) -> list[float]:
         return [getattr(start, n) / SCALE for n in PARAMETERS]
@@ -127,13 +176,7 @@ class MixingNLL:
         total = 0.0
         for tag, d in self.data.items():
             n = self.normalisation[tag]
-            total += _tag_nll(
-                p,
-                tag,
-                (d.tau, d.amplitude, d.amplitude_bar),
-                (n.tau, n.amplitude, n.amplitude_bar),
-                n.weight,
-            )
+            total += _tag_nll(p, tag, (d.tau, d.amplitude, d.amplitude_bar), n)
         return float(total)
 
 
@@ -143,25 +186,31 @@ class CouplingMixingNLL:
     Args:
         data: Data sample of each tag, with ``components``.
 
-        normalisation: Normalisation sample of each tag, with ``components``.
+        normalisation: Normalisation sample of each tag, with ``components``, or its
+            moments of the component amplitudes.
 
         couplings: Values of all couplings (the fixed ones stay at these values).
 
         free: Indices of the free couplings.
 
         labels: Names of the couplings, for the parameter names (default ``c<k>``).
+
+        moments: As for :class:`MixingNLL`.
     """
 
     def __init__(
         self,
         data: Mapping[int, RateSample],
-        normalisation: Mapping[int, RateSample],
+        normalisation: Mapping[int, Normalisation],
         couplings: np.ndarray,
         free: list[int],
         labels: list[str] | None = None,
+        *,
+        moments: bool = True,
     ) -> None:
         _check_tags(data, normalisation)
-        for sample in [*data.values(), *normalisation.values()]:
+        samples = [n for n in normalisation.values() if isinstance(n, RateSample)]
+        for sample in [*data.values(), *samples]:
             if sample.components is None:
                 msg = "Free couplings need the component amplitudes (keep_components=True)"
                 raise ValueError(msg)
@@ -177,7 +226,13 @@ class CouplingMixingNLL:
             *(f"{labels[k]}_{part}" for k in self.free for part in ("re", "im")),
         )
         self.data = dict(data)
-        self.normalisation = dict(normalisation)
+        cache: dict[int, Normalisation] = {}
+        self.normalisation = {
+            tag: cache.setdefault(
+                id(n), _as_moments(n, moments=moments, components=True)
+            )
+            for tag, n in normalisation.items()
+        }
 
     def initial(self, start: MixingParameters) -> list[float]:
         values = [getattr(start, n) / SCALE for n in PARAMETERS]
@@ -198,11 +253,7 @@ class CouplingMixingNLL:
         for tag, d in self.data.items():
             n = self.normalisation[tag]
             total += _tag_nll(
-                p,
-                tag,
-                (d.tau, d.components[0] @ c, d.components[1] @ c),
-                (n.tau, n.components[0] @ c, n.components[1] @ c),
-                n.weight,
+                p, tag, (d.tau, d.components[0] @ c, d.components[1] @ c), n, c
             )
         return float(total)
 

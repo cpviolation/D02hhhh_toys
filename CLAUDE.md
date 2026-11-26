@@ -34,6 +34,8 @@ on each phase go in `docs/notes/`.
 - Toy studies: `.venv/bin/d02hhhh-toys study configs/study/<name>.yaml --out results/<name>
   --workers N` (resumable), then `.venv/bin/d02hhhh-toys summarise results/<name>`.
   See `docs/notes/study.md`.
+- Normalisation-offset factor v: `.venv/bin/python scripts/variance_budget.py
+  configs/study/<name>.yaml` (see `docs/notes/moments.md`).
 - GPU tests: `D02HHHH_TEST_BACKEND=jax .venv/bin/python -m pytest -m slow` (without `-n`).
 
 ## Workflow

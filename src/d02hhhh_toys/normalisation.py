@@ -27,6 +27,10 @@ the proposal needs about 40 amplitude evaluations per event against 1 for the ot
 
 The same sample serves both tags: neither the proposal nor the emulated acceptance
 depends on the flavour, and the likelihood normalises each tag separately.
+
+:func:`normalisation_moments` accumulates the decay-time moments of
+:mod:`.moments` bunch by bunch, so that a large sample is never held in memory. It
+sees the same events as :func:`normalisation_sample` with the same arguments.
 """
 
 from __future__ import annotations
@@ -40,8 +44,11 @@ from tensorwaves.data.rng import NumpyUniformRNG
 from d02hhhh_toys.fit import RateSample
 from d02hhhh_toys.generate import MixingGenerator, _seeds
 from d02hhhh_toys.model import from_sample
+from d02hhhh_toys.moments import ORDER, NormMoments
 
 if TYPE_CHECKING:
+    from collections.abc import Iterator
+
     from d02hhhh_toys.acceptance import LHCbAcceptance
     from d02hhhh_toys.model import AmplitudeModel
 
@@ -88,24 +95,57 @@ def normalisation_sample(
         keep_components: Also store :math:`A_k(p)`, :math:`A_k(\\bar{p})`, for fits with
             free couplings.
     """
-    if method not in METHODS:
-        msg = f"Unknown normalisation method {method!r} (known: {METHODS})"
-        raise ValueError(msg)
+    _check_method(method, generator)
     if method == "proposal":
-        if generator is None:
-            msg = "The 'proposal' normalisation needs the MixingGenerator"
-            raise ValueError(msg)
         toy = generator.proposal(
             size, seed, acceptance=acceptance, keep_components=keep_components
         )
         return RateSample.from_toy(toy, proposal_weights=True)
+    chunks = list(
+        _peaked_or_flat_chunks(
+            model, size, seed, acceptance, method, tau_max, bunch_size, keep_components
+        )
+    )
+    components = None
+    if keep_components:
+        components = tuple(
+            np.concatenate([c.components[i] for c in chunks]) for i in (0, 1)
+        )
+    return RateSample(
+        tau=np.concatenate([c.tau for c in chunks]),
+        amplitude=np.concatenate([c.amplitude for c in chunks]),
+        amplitude_bar=np.concatenate([c.amplitude_bar for c in chunks]),
+        weight=np.concatenate([c.weight for c in chunks]),
+        components=components,
+    )
+
+
+def _check_method(method: str, generator: MixingGenerator | None) -> None:
+    if method not in METHODS:
+        msg = f"Unknown normalisation method {method!r} (known: {METHODS})"
+        raise ValueError(msg)
+    if method == "proposal" and generator is None:
+        msg = "The 'proposal' normalisation needs the MixingGenerator"
+        raise ValueError(msg)
+
+
+def _peaked_or_flat_chunks(
+    model: AmplitudeModel,
+    size: int,
+    seed: int | np.random.SeedSequence,
+    acceptance: LHCbAcceptance | None,
+    method: str,
+    tau_max: float,
+    bunch_size: int,
+    keep_components: bool,
+) -> Iterator[RateSample]:
+    """The accepted events of each bunch, until ``size`` events (the last bunch is cut)."""
     if method == "peaked":
         domain = d02kkpipi.peaked_phase_space_generator(model.model)
     else:
         domain = d02kkpipi.phase_space_generator(model.model)
     seed_domain, seed_rng = _seeds(seed, 2)
     rng_domain, rng = NumpyUniformRNG(seed=seed_domain), np.random.default_rng(seed_rng)
-    events, taus, weights = [], [], []
     count = 0
     while count < size:
         sample = domain.generate(bunch_size, rng_domain)
@@ -121,16 +161,54 @@ def normalisation_sample(
             if method == "peaked"
             else np.ones(bunch_size)
         )
-        events.append(p[keep])
-        taus.append(tau[keep])
-        weights.append(w[keep])
-        count += int(keep.sum())
-    p = np.concatenate(events)[:size]
-    components, conjugates = model.component_pair(p)
-    return RateSample(
-        tau=np.concatenate(taus)[:size],
-        amplitude=components @ model.couplings,
-        amplitude_bar=conjugates @ model.couplings,
-        weight=np.concatenate(weights)[:size],
-        components=(components, conjugates) if keep_components else None,
-    )
+        n = min(int(keep.sum()), size - count)
+        index = np.flatnonzero(keep)[:n]
+        count += n
+        if n == 0:
+            continue
+        components, conjugates = model.component_pair(p[index])
+        yield RateSample(
+            tau=tau[index],
+            amplitude=components @ model.couplings,
+            amplitude_bar=conjugates @ model.couplings,
+            weight=w[index],
+            components=(components, conjugates) if keep_components else None,
+        )
+
+
+def normalisation_moments(
+    model: AmplitudeModel,
+    size: int,
+    seed: int | np.random.SeedSequence,
+    *,
+    acceptance: LHCbAcceptance | None = None,
+    method: str = "peaked",
+    generator: MixingGenerator | None = None,
+    tau_max: float = 20.0,
+    bunch_size: int = 200_000,
+    order: int = ORDER,
+    components: bool = False,
+) -> NormMoments:
+    """The moments (:class:`.moments.NormMoments`) of :func:`normalisation_sample`, accumulated bunch by bunch.
+
+    With ``components``, the moments of the component amplitudes, for free couplings.
+    """
+    _check_method(method, generator)
+    if method == "proposal":
+        sample = normalisation_sample(
+            model,
+            size,
+            seed,
+            acceptance=acceptance,
+            method=method,
+            generator=generator,
+            keep_components=components,
+        )
+        return NormMoments.from_sample(sample, order=order, components=components)
+    total = None
+    for chunk in _peaked_or_flat_chunks(
+        model, size, seed, acceptance, method, tau_max, bunch_size, components
+    ):
+        moments = NormMoments.from_sample(chunk, order=order, components=components)
+        total = moments if total is None else total + moments
+    return total
