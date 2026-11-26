@@ -112,7 +112,7 @@ End to end, one core produces a normalisation event in 0.177 ms.
   still be sampled directly, without accept-reject. Adding K*(892) peaks in the Kπ
   masses is the obvious candidate. The gain is at most 2.7.
 - **It is not needed for Phase 8.** With the moments, the current design reaches
-  σ_norm ≈ 0.1 cheaply (decision [P2](../decisions.md#p2-size-of-the-normalisation-sample)):
+  σ_norm ≈ 0.1 cheaply (decision [C15](../decisions.md#confirmed-decisions)):
 
   | N per tag | n | σ_norm(y_CP), σ_norm(Δx) | Per base sample | 7 base samples on 46 cores |
   |---|---|---|---|---|

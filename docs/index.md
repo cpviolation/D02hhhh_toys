@@ -7,10 +7,8 @@ time-dependent amplitude fit of D0 → K⁺K⁻π⁺π⁻.
 The amplitude model is the AmpGen model of JHEP 02 (2019) 126, taken from
 [aman-examples](https://github.com/cpviolation/aman-examples) at tag `0.1.0`.
 
-!!! warning "Open decisions"
-    Phase 8 needs two answers first: the sizes of the data/simulation differences
-    (**P1**) and the size of the normalisation sample (**P2**).
-    See [Decisions](decisions.md).
+!!! success "No open decisions"
+    P1–P3 were confirmed on 2026-11-26 as C14–C16. See [Decisions](decisions.md).
 
 ## Status
 
@@ -24,8 +22,8 @@ The amplitude model is the AmpGen model of JHEP 02 (2019) 126, taken from
 | 5 | LHCb-like acceptance emulator | done | [acceptance](notes/acceptance.md) |
 | 6 | Likelihood with external normalisation | done | [normalisation](notes/normalisation.md) |
 | 7 | Scenarios and study driver, documentation site | done ([#1](https://github.com/cpviolation/D02hhhh_toys/pull/1), [#2](https://github.com/cpviolation/D02hhhh_toys/pull/2)) | [study](notes/study.md) |
-| 7b | Normalisation as τ moments; variance budget of v | in review | [moments and v](notes/moments.md) |
-| 8 | Validation and first results | waiting for P1, P2 | |
+| 7b | Normalisation as τ moments; variance budget of v | done ([#3](https://github.com/cpviolation/D02hhhh_toys/pull/3)) | [moments and v](notes/moments.md) |
+| 8 | Validation and first results | in progress | |
 
 The full plan is in the [study plan](TOY_STUDY_PLAN.md).
 [Decisions](decisions.md) lists where the code departs from it.

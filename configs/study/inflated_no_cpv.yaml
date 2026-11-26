@@ -1,0 +1,28 @@
+# As inflated.yaml, with inflated x_CP and y_CP but no CP violation (Δx = Δy = 0),
+# to separate the CP-symmetric effects from the CP-violation terms (decision C16).
+# Override magnitudes: decision C14. Normalisation size: C15.
+name: inflated_no_cpv
+truth: {x_cp_mix: 0.03, y_cp_mix: 0.025, dx_mix: 0.0, dy_mix: 0.0}
+n_per_tag: 100000
+n_norm: 40000000
+n_toys: 100
+seed: 20261127
+acceptance: ../acceptance/base.yaml
+backend: numpy
+norm_method: peaked
+scenarios:
+  - {name: closure, mode: full}
+  - {name: factorised, mode: factorised}
+  - {name: ignore_time, mode: ignore_time}
+  - {name: ignore_ps, mode: ignore_ps}
+  - {name: none, mode: none}
+  - {name: ip_resolution_+5%, mode: full, overrides: {ip_resolution.scale: 1.05}}
+  - {name: ip_resolution_-5%, mode: full, overrides: {ip_resolution.scale: 0.95}}
+  - name: ipchi2_cut_+0.5
+    mode: full
+    overrides:
+      hlt1:
+        mode: any
+        lines: [{kind: two_track, name: two_track, track_ipchi2_min: 4.5}]
+  - {name: softer_d0_pt, mode: full, overrides: {production.pt_scale: 2.3}}
+  - {name: slower_tracking_turn_on, mode: full, overrides: {tracking.width: 2.0}}
