@@ -22,6 +22,16 @@ def main(argv: list[str] | None = None) -> int:
     study.add_argument("--out", required=True, help="output directory (results/...)")
     study.add_argument("--workers", type=int, default=1, help="parallel toy processes")
     study.add_argument("--toys", type=int, help="override the number of toys")
+    study.add_argument(
+        "--store-toys",
+        action="store_true",
+        help="write each toy to OUT/toys/ (about 34 MB per toy at 1e5 events per tag)",
+    )
+    study.add_argument(
+        "--toys-from",
+        metavar="DIR",
+        help="read the toys from DIR/toys/ (a study with the same generation settings)",
+    )
     summary = commands.add_parser("summarise", help="rewrite summary.json and plots")
     summary.add_argument("out", help="study directory")
     args = parser.parse_args(argv)
@@ -39,7 +49,12 @@ def main(argv: list[str] | None = None) -> int:
         if args.toys is not None:
             config.n_toys = args.toys
         run_study(
-            config, args.out, workers=args.workers, log=lambda m: print(m, flush=True)
+            config,
+            args.out,
+            workers=args.workers,
+            store_toys=args.store_toys,
+            toys_from=args.toys_from,
+            log=lambda m: print(m, flush=True),
         )
         return 0
     if args.command == "summarise":

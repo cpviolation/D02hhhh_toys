@@ -11,6 +11,21 @@
   - `smoke.yaml`: 5 chains and small toys, which takes minutes.
 - **Resume:** a study resumes where it stopped: toys already in `toys.jsonl` are
   skipped, and the normalisation samples in `norm/` are reused.
+- **Stored toys:** `--store-toys` writes each toy (events, decay times and amplitudes of
+  both tags) to `<out>/toys/toy_NNNNN.npz`, about 34 MB per toy at 10⁵ events per tag.
+  `--toys-from <dir>` fits the toys stored in `<dir>/toys/` instead of generating them,
+  e.g. with new scenarios:
+
+      .venv/bin/d02hhhh-toys study configs/study/default.yaml --out results/default --workers 40 --store-toys
+      .venv/bin/d02hhhh-toys study my_new_scenarios.yaml --out results/new --workers 40 --toys-from results/default
+
+  Each file records how its toy was generated: seed, size, truth, acceptance and
+  sampler. A study with other settings refuses it. Toys missing from `<dir>` are
+  generated. A rerun in the same `<out>` always reads the toys it stored.
+- **Where the output goes:** `results/` is a symbolic link to
+  `/data01/gr1/lhcb/mmartinelli/D02hhhh_toys/output`, outside the repository (it is
+  ignored by git). In a new clone, create it again with
+  `ln -s /data01/gr1/lhcb/mmartinelli/D02hhhh_toys/output results`.
 - **Parallelism:** workers are forked processes that share the model and the
   normalisation samples. They use the NumPy backend, one BLAS thread each. JAX cannot
   be forked: `backend: jax` needs `--workers 1`.

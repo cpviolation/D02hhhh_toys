@@ -125,5 +125,6 @@ shifts are below 0.01σ for the data/simulation differences, and are given other
   of fits for all 14 fits.
 - 100 toys on 40 workers take about 2 hours. The normalisation (7 base samples of 4·10⁷
   events) takes a few minutes more.
-- Generation dominates. To redo the fits with another scenario, the toys have to be
-  generated again: they are not stored (about 8 MB per toy).
+- Generation dominates. These toys were not stored, so another scenario means
+  generating them again. Since then, `--store-toys` keeps them (34 MB per toy, see
+  [study](study.md#running-a-study)) and `--toys-from` refits them.
