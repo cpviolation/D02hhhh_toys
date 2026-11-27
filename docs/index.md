@@ -7,10 +7,8 @@ time-dependent amplitude fit of D0 → K⁺K⁻π⁺π⁻.
 The amplitude model is the AmpGen model of JHEP 02 (2019) 126, taken from
 [aman-examples](https://github.com/cpviolation/aman-examples) at tag `0.1.0`.
 
-!!! warning "Open decisions"
-    Phase 9 (charge-asymmetric acceptance) needs three answers first: which asymmetries
-    to model (**P4**), their size (**P5**) and the scenarios (**P6**).
-    See [Decisions](decisions.md).
+!!! success "No open decisions"
+    P4–P6 were confirmed on 2026-11-27 as C17–C19. See [Decisions](decisions.md).
 
 ## Status
 
@@ -26,7 +24,7 @@ The amplitude model is the AmpGen model of JHEP 02 (2019) 126, taken from
 | 7 | Scenarios and study driver, documentation site | done ([#1](https://github.com/cpviolation/D02hhhh_toys/pull/1), [#2](https://github.com/cpviolation/D02hhhh_toys/pull/2)) | [study](notes/study.md) |
 | 7b | Normalisation as τ moments; variance budget of v | done ([#3](https://github.com/cpviolation/D02hhhh_toys/pull/3)) | [moments and v](notes/moments.md) |
 | 8 | Validation and first results | done ([#4](https://github.com/cpviolation/D02hhhh_toys/pull/4)) | [results](notes/results.md) |
-| 9 | Charge-asymmetric acceptance | waiting for P4–P6 | [decisions](decisions.md#open-decisions) |
+| 9 | Charge-asymmetric acceptance | in progress ([#6](https://github.com/cpviolation/D02hhhh_toys/pull/6)) | |
 
 The full plan is in the [study plan](TOY_STUDY_PLAN.md).
 [Decisions](decisions.md) lists where the code departs from it.

@@ -1,0 +1,8 @@
+# base.yaml plus kaon and pion detection asymmetries A_h(p) = a_h + b_h/p
+# (decisions C17, C18: toy values, to be tuned on Run 3 calibration samples).
+base: base.yaml
+charge_asymmetry:  # fractions; b in GeV
+  kaon_a: 0.005
+  kaon_b_gev: 0.05
+  pion_a: 0.0
+  pion_b_gev: 0.005

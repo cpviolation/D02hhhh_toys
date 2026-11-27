@@ -11,6 +11,7 @@ from d02hhhh_toys.acceptance import (
     HLT1,
     AcceptanceConfig,
     BoxLine,
+    ChargeAsymmetry,
     LHCbAcceptance,
     OneTrackLine,
     TwoTrackLine,
@@ -344,3 +345,42 @@ def test_decay_vertex_inside_rf_foil(events):
     lab_far = acc.lab_event(events, far, np.random.default_rng(19))
     expected = acc.inside_foil(lab_far).mean()
     assert acc.accept(events, far, np.random.default_rng(19)).mean() <= expected
+
+
+def test_charge_asymmetry_factors():
+    asym = ChargeAsymmetry(kaon_a=0.005, kaon_b_gev=0.05, pion_b_gev=0.005)
+    p = np.array([[5.0, 5.0, 10.0, 10.0]])
+    np.testing.assert_allclose(
+        asym.factors(p), [[1.015, 0.985, 1.0005, 0.9995]], rtol=0, atol=1e-15
+    )
+    # one track of each charge per species: a constant A gives the same factor for
+    # an event and its CP conjugate (K+ <-> K-, pi+ <-> pi- momenta); b does not
+    momenta = np.array([[4.0, 12.0, 3.0, 30.0]])
+    conjugate = momenta[:, [1, 0, 3, 2]]
+    constant = ChargeAsymmetry(kaon_a=0.02, pion_a=0.01)
+    assert np.prod(constant.factors(momenta)) == pytest.approx(
+        np.prod(constant.factors(conjugate)), rel=1e-15
+    )
+    assert np.prod(asym.factors(momenta)) != pytest.approx(
+        np.prod(asym.factors(conjugate)), rel=1e-6
+    )
+
+
+def test_kaon_detection_asymmetry(events):
+    """K+ is found more often than K-, by A_K(p) = a + b/p."""
+    config = AcceptanceConfig().with_overrides(
+        {"charge_asymmetry": {"kaon_a": 0.02, "kaon_b_gev": 0.2}}
+    )
+    acc = LHCbAcceptance(config)
+    e = np.repeat(events, 5, axis=0)
+    lab = acc.lab_event(e, np.ones(len(e)), np.random.default_rng(13))
+    plateau = lab.p > 10
+    k_plus = lab.reconstructed[:, 0][plateau[:, 0]].mean()
+    k_minus = lab.reconstructed[:, 1][plateau[:, 1]].mean()
+    expected = 0.02 + 0.2 * np.mean(1 / lab.p[:, :2][plateau[:, :2]])
+    measured = (k_plus - k_minus) / (k_plus + k_minus)
+    assert measured == pytest.approx(expected, abs=0.006)
+    pions = lab.reconstructed[:, 2][plateau[:, 2]].mean() - (
+        lab.reconstructed[:, 3][plateau[:, 3]].mean()
+    )
+    assert abs(pions) < 0.006

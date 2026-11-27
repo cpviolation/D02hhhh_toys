@@ -17,7 +17,9 @@ The emulator acts on events in the :math:`D^0` rest frame and their decay times
    (\mathrm{IP}_\mathrm{meas}/\sigma_\mathrm{IP})^2`.
 4. **Tracks:** each daughter must satisfy the :math:`\eta`, :math:`p` and :math:`p_T`
    requirements, and is reconstructed with probability :math:`\varepsilon(p) =
-   \varepsilon_\max (1 - e^{-(p - p_\mathrm{thr})/w})` (0 below :math:`p_\mathrm{thr}`).
+   \varepsilon_\max (1 - e^{-(p - p_\mathrm{thr})/w})` (0 below :math:`p_\mathrm{thr}`),
+   times :math:`1 \pm A_h(p)` for a positive or negative track of species :math:`h`
+   (:class:`ChargeAsymmetry`).
 5. **Selection:** all four daughters reconstructed; offline, at least
    :math:`N_\mathrm{off}` daughters with :math:`\mathrm{IP}\chi^2` above a cut
    (:class:`Offline`; :math:`N_\mathrm{off} = 0` by default, so that the
@@ -64,8 +66,14 @@ These lines follow the ideas of the LHCb HLT1 inclusive hadron lines (a
 :math:`p_T`-dependent displacement requirement for one track, a multivariate
 two-track vertex selection), with their own functional forms and toy parameters.
 
-Nothing depends on the charges, so the acceptance is CP-symmetric:
-:math:`\varepsilon(\tau, \bar{p}) = \varepsilon(\tau, p)`.
+Only the detection asymmetries :math:`A_h(p) = a_h + b_h/p` depend on the charges
+(:class:`ChargeAsymmetry`, zero by default). Without them the acceptance is
+CP-symmetric: :math:`\varepsilon(\tau, \bar{p}) = \varepsilon(\tau, p)`. With them it
+is not, but it still depends only on the final-state momenta, so it is the same for
+:math:`D^0` and :math:`\bar{D}^0` decays. Every event has one track of each charge per
+species, so a constant :math:`A_h` multiplies all events by the same
+:math:`1 - A_h^2`: only the momentum dependence :math:`b_h` makes
+:math:`\varepsilon(\tau, \bar{p}) \ne \varepsilon(\tau, p)`.
 
 The numbers in :class:`AcceptanceConfig` are toy values, to be tuned on Run 3
 simulation. Units: GeV, µm.
@@ -115,6 +123,29 @@ class TrackingEfficiency:
     plateau: float = 0.97
     threshold: float = 1.5  # GeV, p_thr
     width: float = 1.5  # GeV, w
+
+
+@dataclass
+class ChargeAsymmetry:
+    r"""Detection asymmetries :math:`A_h(p) = (\varepsilon_{h^+} - \varepsilon_{h^-}) / (\varepsilon_{h^+} + \varepsilon_{h^-}) = a_h + b_h/p`.
+
+    They multiply the tracking efficiency of a track of charge :math:`\pm` by
+    :math:`1 \pm A_h(p)` (fractions; :math:`b_h` in GeV, :math:`p` in GeV).
+    """
+
+    kaon_a: float = 0.0
+    kaon_b_gev: float = 0.0
+    pion_a: float = 0.0
+    pion_b_gev: float = 0.0
+
+    def factors(self, p: np.ndarray) -> np.ndarray:
+        r"""The factors :math:`1 \pm A_h(p)` for daughters ``(K+, K-, pi+, pi-)``, ``p`` of shape ``(N, 4)``."""
+        a = np.array([self.kaon_a, self.kaon_a, self.pion_a, self.pion_a])
+        b = np.array(
+            [self.kaon_b_gev, self.kaon_b_gev, self.pion_b_gev, self.pion_b_gev]
+        )
+        charge = np.array([1.0, -1.0, 1.0, -1.0])
+        return 1 + charge * (a + b / p)
 
 
 @dataclass
@@ -324,6 +355,7 @@ class AcceptanceConfig:
     ip_resolution: IPResolution = field(default_factory=IPResolution)
     tracks: TrackRequirements = field(default_factory=TrackRequirements)
     tracking: TrackingEfficiency = field(default_factory=TrackingEfficiency)
+    charge_asymmetry: ChargeAsymmetry = field(default_factory=ChargeAsymmetry)
     offline: Offline = field(default_factory=Offline)
     decay_vertex: DecayVertex = field(default_factory=DecayVertex)
     vertex_resolution: VertexResolution = field(default_factory=VertexResolution)
@@ -541,6 +573,7 @@ class LHCbAcceptance:
         efficiency = eff.plateau * -np.expm1(
             -np.clip(p - eff.threshold, 0, None) / eff.width
         )
+        efficiency = np.clip(efficiency * cfg.charge_asymmetry.factors(p), 0, 1)
         found = rng.uniform(size=p.shape) < efficiency
         return LabEvent(
             momenta=lab,
