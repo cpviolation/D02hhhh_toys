@@ -19,6 +19,10 @@ with c = cosh(wτ/2), s = sinh(wτ/2)/w, and ζ = z_CP ± Δz.
   - A point where the bound exceeds 1e-10 is returned as a bad step. Such points are
     |w| ≳ 0.4, far from any minimum.
   - The likelihood agrees with the event sum to 1e-12 (`test_moments.py`).
+  - **Exception, since Phase 8:** the `ignore_time` and `none` fits end at |w| ≈ 0.4,
+    beyond the reach of order 20. Their decay times are independent of the point, so
+    they use the analytic ⟨τⁿ⟩ to order 80 (`ANALYTIC_ORDER`). See
+    [results](results.md#technical-issues-found-in-this-phase).
 
 ### What changes
 

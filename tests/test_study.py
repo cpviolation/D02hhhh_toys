@@ -83,7 +83,7 @@ def test_config_validation():
 
 
 def test_shipped_study_configs():
-    for name in ("default", "inflated", "inflated_no_cpv", "smoke"):
+    for name in ("default", "default_extremes", "inflated", "inflated_no_cpv", "smoke"):
         config = StudyConfig.from_yaml(CONFIGS / "study" / f"{name}.yaml")
         truth = config.true_acceptance()
         for scenario in config.scenarios:

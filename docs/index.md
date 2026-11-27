@@ -23,7 +23,7 @@ The amplitude model is the AmpGen model of JHEP 02 (2019) 126, taken from
 | 6 | Likelihood with external normalisation | done | [normalisation](notes/normalisation.md) |
 | 7 | Scenarios and study driver, documentation site | done ([#1](https://github.com/cpviolation/D02hhhh_toys/pull/1), [#2](https://github.com/cpviolation/D02hhhh_toys/pull/2)) | [study](notes/study.md) |
 | 7b | Normalisation as τ moments; variance budget of v | done ([#3](https://github.com/cpviolation/D02hhhh_toys/pull/3)) | [moments and v](notes/moments.md) |
-| 8 | Validation and first results | in progress | |
+| 8 | Validation and first results | in review ([#4](https://github.com/cpviolation/D02hhhh_toys/pull/4)) | [results](notes/results.md) |
 
 The full plan is in the [study plan](TOY_STUDY_PLAN.md).
 [Decisions](decisions.md) lists where the code departs from it.
@@ -42,8 +42,14 @@ The full plan is in the [study plan](TOY_STUDY_PLAN.md).
 - **The fits no longer depend on the normalisation size.** The normalisation is
   evaluated from decay-time moments, which makes a likelihood call 24 times faster and
   shrinks the stored samples to a few kB.
-- **Ignoring the time acceptance biases y_CP by about 20σ.** This comes from the smoke
-  study (5 chains, inflated mixing). It tests the driver and is not a result.
+- **Phase 8 results** (100 toys of 10⁵ events per tag, [results](notes/results.md)):
+    - the closure is unbiased, with unit pull widths;
+    - every moderate data/simulation difference moves **y_CP by 1–5σ_stat**, linearly in
+      its size and almost independently of the true values;
+    - x_CP and Δy move by less than 0.03σ, and Δx only in proportion to a non-zero true
+      Δx (≤ 0.3σ at Δx = 5·10⁻³);
+    - factorising the acceptance into ε(τ)ε(p) shifts y_CP by 8.5σ, and ignoring the
+      time acceptance by about 300σ.
 
 ## Quick start
 
