@@ -160,3 +160,12 @@ def test_seed_sequence_is_not_consumed(sampler):
     a = generator.generate(D0, 300, seed)
     b = generator.generate(D0, 300, seed)
     np.testing.assert_array_equal(a.tau, b.tau)
+
+
+def test_fixed_maximum(sampler, subset_model):
+    fixed = AmplitudeSampler(
+        subset_model, estimate_size=20_000, maximum=2 * sampler.estimated_maximum
+    )
+    assert fixed.maximum == 2 * sampler.estimated_maximum
+    with pytest.raises(ValueError, match="below the estimated"):
+        AmplitudeSampler(subset_model, estimate_size=20_000, maximum=1e-6)

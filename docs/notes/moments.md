@@ -19,6 +19,10 @@ with c = cosh(wτ/2), s = sinh(wτ/2)/w, and ζ = z_CP ± Δz.
   - A point where the bound exceeds 1e-10 is returned as a bad step. Such points are
     |w| ≳ 0.4, far from any minimum.
   - The likelihood agrees with the event sum to 1e-12 (`test_moments.py`).
+  - **Exception, since Phase 8:** the `ignore_time` and `none` fits end at |w| ≈ 0.4,
+    beyond the reach of order 20. Their decay times are independent of the point, so
+    they use the analytic ⟨τⁿ⟩ to order 80 (`ANALYTIC_ORDER`). See
+    [results](results.md#technical-issues-found-in-this-phase).
 
 ### What changes
 
@@ -112,7 +116,7 @@ End to end, one core produces a normalisation event in 0.177 ms.
   still be sampled directly, without accept-reject. Adding K*(892) peaks in the Kπ
   masses is the obvious candidate. The gain is at most 2.7.
 - **It is not needed for Phase 8.** With the moments, the current design reaches
-  σ_norm ≈ 0.1 cheaply (decision [P2](../decisions.md#p2-size-of-the-normalisation-sample)):
+  σ_norm ≈ 0.1 cheaply (decision [C15](../decisions.md#confirmed-decisions)):
 
   | N per tag | n | σ_norm(y_CP), σ_norm(Δx) | Per base sample | 7 base samples on 46 cores |
   |---|---|---|---|---|

@@ -126,6 +126,10 @@ class AmplitudeSampler:
 
         estimate_size: Number of candidates used to estimate the maximum.
 
+        maximum: A fixed maximum, used instead of ``safety`` times the estimate. Use it
+            when the generation draws far more candidates than the estimate sample,
+            so that its tail goes further.
+
         seed: Seed of the estimate.
 
         bunch_size: Number of candidates evaluated at a time.
@@ -143,6 +147,7 @@ class AmplitudeSampler:
         seed: int = 12345,
         bunch_size: int = 200_000,
         peak_fractions: tuple[float, float, float] = (0.2, 0.2, 0.1),
+        maximum: float | None = None,
     ) -> None:
         self.model = model
         self.domain = d02kkpipi.peaked_phase_space_generator(
@@ -152,7 +157,13 @@ class AmplitudeSampler:
         self.safety = float(safety)
         _, weights, _ = self._candidates(estimate_size, NumpyUniformRNG(seed=seed))
         self.estimated_maximum = float(weights.max())
-        self.maximum = self.safety * self.estimated_maximum
+        if maximum is None:
+            self.maximum = self.safety * self.estimated_maximum
+        elif maximum < self.estimated_maximum:
+            msg = f"The maximum {maximum} is below the estimated {self.estimated_maximum:.4g}"
+            raise ValueError(msg)
+        else:
+            self.maximum = float(maximum)
         self.estimated_efficiency = float(weights.mean() / self.maximum)
 
     def _candidates(
@@ -171,8 +182,8 @@ class AmplitudeSampler:
         if len(weights) and weights.max() > self.maximum:
             msg = (
                 f"|A|^2/r = {weights.max():.4g} exceeds the maximum {self.maximum:.4g}"
-                f" (estimated {self.estimated_maximum:.4g} x safety {self.safety}):"
-                " increase the safety factor or the estimate sample"
+                f" (estimate {self.estimated_maximum:.4g}): increase the maximum, the"
+                " safety factor or the estimate sample"
             )
             raise MaximumExceededError(msg)
 

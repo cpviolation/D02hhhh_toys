@@ -1,15 +1,17 @@
 # Default study: realistic mixing, the toy LHCb-like acceptance (two-track HLT1, RF foil),
 # normalisation modes and acceptance overrides.
-# THE OVERRIDE MAGNITUDES ARE PROPOSALS, NOT YET CONFIRMED.
+# Override magnitudes: decision C14. Normalisation size: C15.
 name: default
 truth: {x_cp_mix: 0.004, y_cp_mix: 0.006, dx_mix: 0.0, dy_mix: 0.0}
 n_per_tag: 100000
-n_norm: 2000000
+n_norm: 40000000
 n_toys: 100
 seed: 20261125
 acceptance: ../acceptance/base.yaml
 backend: numpy
 norm_method: peaked
+# |A|^2/r ceiling of the toy generator: the largest of 4e7 candidates is 4.42 (Phase 8)
+sampler_maximum: 6.0
 scenarios:
   - {name: closure, mode: full}
   - {name: factorised, mode: factorised}

@@ -1,4 +1,4 @@
-results/
+/results
 *.npz
 !tests/data/*.npz
 __pycache__/

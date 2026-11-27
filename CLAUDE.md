@@ -33,7 +33,11 @@ on each phase go in `docs/notes/`.
   directly, or use `uv run`.
 - Toy studies: `.venv/bin/d02hhhh-toys study configs/study/<name>.yaml --out results/<name>
   --workers N` (resumable), then `.venv/bin/d02hhhh-toys summarise results/<name>`.
-  See `docs/notes/study.md`.
+  Add `--store-toys` to keep the toys, and `--toys-from results/<other>` to refit stored
+  toys. See `docs/notes/study.md`.
+- `results/` is a symbolic link to `/data01/gr1/lhcb/mmartinelli/D02hhhh_toys/output`
+  (large outputs, not in git). In a new clone, make it with
+  `.venv/bin/d02hhhh-toys setup <folder>` (`--move`, `--force`: see `workspace.py`).
 - Normalisation-offset factor v: `.venv/bin/python scripts/variance_budget.py
   configs/study/<name>.yaml` (see `docs/notes/moments.md`).
 - GPU tests: `D02HHHH_TEST_BACKEND=jax .venv/bin/python -m pytest -m slow` (without `-n`).

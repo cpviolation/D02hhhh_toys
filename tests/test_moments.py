@@ -221,3 +221,36 @@ def test_v_factor_predicts_the_spread_of_fits(subset_model):
     for name in ("y_cp_mix", "dx_mix"):  # the parameters with a large v
         i = PARAMETERS.index(name)
         assert 0.55 < measured[i] / predicted[i] < 1.6, (measured, predicted)
+
+
+@pytest.mark.parametrize("tag", [D0, D0BAR])
+def test_analytic_moments_converge_far_from_the_truth(tag):
+    """At the ignore_time/none minima (y_CP ~ -0.42, Δx ~ -0.1) order 80 is exact."""
+    from scipy.integrate import quad
+
+    from d02hhhh_toys.moments import ANALYTIC_ORDER
+
+    tau_max = 20.0
+    one = np.ones((1, 1, 1))
+    base = NormMoments(
+        aa=1.3 * one, bb=0.8 * one, ab=(0.2 - 0.3j) * one,
+        weight_sum=1.0, count=1, tau_powers=np.ones(1), tau_max=tau_max,
+    )  # fmt: skip
+    moments = base.with_decay_time_moments(
+        decay_time_moments(tau_max, ANALYTIC_ORDER), tau_max
+    )
+    p = MixingParameters(x_cp_mix=6e-3, y_cp_mix=-0.42, dx_mix=-0.1, dy_mix=0.012)
+    assert moments.order == ANALYTIC_ORDER
+    assert moments.truncation(p) < 1e-15
+    w = np.sqrt(complex(p.z_cp**2 - p.delta_z**2))
+    zeta = p.z_cp + tag * p.delta_z
+    aa, bb, ab = (1.3, 0.8, 0.2 - 0.3j) if tag == D0 else (0.8, 1.3, 0.2 + 0.3j)
+
+    def integrand(t, part):
+        c, s = np.cosh(w * t / 2), np.sinh(w * t / 2) / w
+        r = abs(c) ** 2 * aa + abs(zeta * s) ** 2 * bb
+        r += 2 * np.real(zeta * np.conj(c) * s * ab)
+        return r * np.exp(-t)
+
+    exact = quad(integrand, 0, tau_max, args=(0,), limit=200)[0] / -np.expm1(-tau_max)
+    assert moments.mean(p, tag) == pytest.approx(exact, rel=1e-12)

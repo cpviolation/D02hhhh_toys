@@ -83,7 +83,7 @@ def test_config_validation():
 
 
 def test_shipped_study_configs():
-    for name in ("default", "inflated", "smoke"):
+    for name in ("default", "default_extremes", "inflated", "inflated_no_cpv", "smoke"):
         config = StudyConfig.from_yaml(CONFIGS / "study" / f"{name}.yaml")
         truth = config.true_acceptance()
         for scenario in config.scenarios:
@@ -262,3 +262,36 @@ def test_run_study_and_resume(tmp_path):
     assert "1 toys to run, 2 already done" in lines
     assert [r["toy"] for r in read_records(tmp_path)] == [0, 1, 2]
     assert json.loads((tmp_path / "summary.json").read_text())["n_toys"] == 3
+
+
+def test_stored_toys_are_refitted(tmp_path):
+    first, second = tmp_path / "first", tmp_path / "second"
+    config = make_config(scenarios=[{"name": CLOSURE, "mode": "full"}], n_toys=2)
+    run_study(config, first, store_toys=True, log=lambda m: None)
+    assert sorted(p.name for p in (first / "toys").iterdir()) == [
+        "toy_00000.npz",
+        "toy_00001.npz",
+    ]
+    # new scenarios on the same toys: identical closure fits, nothing generated
+    more = make_config(
+        scenarios=[
+            {"name": CLOSURE, "mode": "full"},
+            {"name": "factorised", "mode": "factorised"},
+        ],
+        n_toys=2,
+    )
+    run_study(more, second, toys_from=first, log=lambda m: None)
+    a, b = read_records(first), read_records(second)
+    for x, y in zip(a, b, strict=True):
+        assert x["toy_source"] == "generated"
+        assert y["toy_source"].endswith(f"toy_{y['toy']:05d}.npz")
+        assert x["results"][CLOSURE]["values"] == y["results"][CLOSURE]["values"]
+    assert not (second / "toys").exists()
+    # toys of another truth are refused
+    other = make_config(
+        scenarios=[{"name": CLOSURE, "mode": "full"}],
+        n_toys=1,
+        truth={**TRUTH, "y_cp_mix": 2 * TRUTH["y_cp_mix"]},
+    )
+    with pytest.raises(ValueError, match="other settings"):
+        run_study(other, tmp_path / "third", toys_from=first, log=lambda m: None)

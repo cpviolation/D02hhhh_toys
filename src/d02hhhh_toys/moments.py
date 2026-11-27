@@ -53,6 +53,9 @@ if TYPE_CHECKING:
     from d02hhhh_toys.fit import RateSample
 
 ORDER = 20
+# order of the analytic decay-time moments (modes `ignore_time`, `none`): their fits
+# end far from the truth, at |w| ~ 0.4, where order 20 no longer converges
+ANALYTIC_ORDER = 80
 #: maximum relative truncation error of the series accepted by the likelihood
 TRUNCATION_TOLERANCE = 1e-10
 
@@ -178,7 +181,7 @@ class NormMoments:
         self, moments: np.ndarray, tau_max: float
     ) -> NormMoments:
         r"""The moments if each event's :math:`\tau` were replaced by an independent one with moments :math:`\langle\tau^n\rangle` = ``moments``."""
-        moments = np.asarray(moments, dtype=float)[: self.order + 1]
+        moments = np.asarray(moments, dtype=float)  # its length sets the new order
         return replace(
             self,
             aa=self.aa[:1] * moments[:, None, None],

@@ -1,0 +1,16 @@
+# The ignore_time and none scenarios of default.yaml on its first 25 toys (same seed, so
+# the same toys), rerun after their moments moved to order 80 (Phase 8, results note).
+name: default_extremes
+truth: {x_cp_mix: 0.004, y_cp_mix: 0.006, dx_mix: 0.0, dy_mix: 0.0}
+n_per_tag: 100000
+n_norm: 40000000
+n_toys: 25
+seed: 20261125
+acceptance: ../acceptance/base.yaml
+backend: numpy
+norm_method: peaked
+sampler_maximum: 6.0
+scenarios:
+  - {name: closure, mode: full}
+  - {name: ignore_time, mode: ignore_time}
+  - {name: none, mode: none}

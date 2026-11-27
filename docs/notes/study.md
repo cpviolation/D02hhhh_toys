@@ -11,6 +11,21 @@
   - `smoke.yaml`: 5 chains and small toys, which takes minutes.
 - **Resume:** a study resumes where it stopped: toys already in `toys.jsonl` are
   skipped, and the normalisation samples in `norm/` are reused.
+- **Stored toys:** `--store-toys` writes each toy (events, decay times and amplitudes of
+  both tags) to `<out>/toys/toy_NNNNN.npz`, about 34 MB per toy at 10⁵ events per tag.
+  `--toys-from <dir>` fits the toys stored in `<dir>/toys/` instead of generating them,
+  e.g. with new scenarios:
+
+      .venv/bin/d02hhhh-toys study configs/study/default.yaml --out results/default --workers 40 --store-toys
+      .venv/bin/d02hhhh-toys study my_new_scenarios.yaml --out results/new --workers 40 --toys-from results/default
+
+  Each file records how its toy was generated: seed, size, truth, acceptance and
+  sampler. A study with other settings refuses it. Toys missing from `<dir>` are
+  generated. A rerun in the same `<out>` always reads the toys it stored.
+- **Where the output goes:** `results/` is a symbolic link to a folder outside the
+  repository, made once with `.venv/bin/d02hhhh-toys setup <folder>` (see the
+  [quick start](../index.md#quick-start)). Here it is
+  `/data01/gr1/lhcb/mmartinelli/D02hhhh_toys/output`.
 - **Parallelism:** workers are forked processes that share the model and the
   normalisation samples. They use the NumPy backend, one BLAS thread each. JAX cannot
   be forked: `backend: jax` needs `--workers 1`.
@@ -31,8 +46,8 @@ model.
 | `none` | no acceptance | events without acceptance |
 
 `closure` must be `full` without overrides. The proposed data/simulation differences
-are below. **Their magnitudes are proposals, not yet confirmed:** see decision
-[P1](../decisions.md#p1-sizes-of-the-datasimulation-differences).
+are below. Their magnitudes were confirmed as decision
+[C14](../decisions.md#confirmed-decisions).
 
 | Scenario | Override of the analyst's model |
 |---|---|
@@ -97,7 +112,7 @@ by the same amount. That offset does not average away over toys.
   the scenarios' offsets nearly equal. This is the case for `full` with overrides and
   for `factorised`, and less so for `ignore_time` and `ignore_ps`, whose τ or points
   are redrawn.
-- **Consequence for Phase 8** (decision [P2](../decisions.md#p2-size-of-the-normalisation-sample)).
+- **Consequence for Phase 8** (decision [C15](../decisions.md#confirmed-decisions)).
   For σ_norm ≲ 0.1, N_norm/N_data must be about 400. Since Phase 7b this costs only
   the generation: about 6 CPU-h for all 7 base samples at 10⁵ events per tag, with
   the shared generation.

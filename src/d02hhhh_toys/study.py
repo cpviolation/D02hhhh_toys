@@ -76,9 +76,9 @@ import yaml
 
 from d02hhhh_toys.acceptance import AcceptanceConfig, LHCbAcceptance
 from d02hhhh_toys.fit import PARAMETERS, SCALE, MixingNLL, RateSample, fit
-from d02hhhh_toys.generate import AmplitudeSampler, MixingGenerator
+from d02hhhh_toys.generate import AmplitudeSampler, MixingGenerator, ToySample
 from d02hhhh_toys.model import AmplitudeModel
-from d02hhhh_toys.moments import NormMoments, decay_time_moments
+from d02hhhh_toys.moments import ANALYTIC_ORDER, NormMoments, decay_time_moments
 from d02hhhh_toys.normalisation import (
     normalisation_moments,
     shared_normalisation_moments,
@@ -118,6 +118,7 @@ class StudyConfig:
     norm_method: str = "peaked"
     tau_max: float = 20.0
     sampler_safety: float = 1.2
+    sampler_maximum: float | None = None  # fixed |A|^2/r maximum (None: estimate)
     norm_check_parts: int = 4  # K of the normalisation-offset check (0: none)
     norm_chunk: int = 250_000  # accepted normalisation events per chunk (parallel unit)
     base_dir: str = "."
@@ -258,19 +259,25 @@ def derive_normalisation(
     (:meth:`.NormMoments.with_decay_time_moments`):
 
     - ``factorised``: the decay times of the accepted events;
-    - ``ignore_time``: :math:`e^{-\tau}` on :math:`[0, \tau_\max)`;
+    - ``ignore_time``: :math:`e^{-\tau}` on :math:`[0, \tau_\max)`, to order
+      ``ANALYTIC_ORDER`` (its fit ends far from the truth, where order 20 does not
+      converge);
+    - ``none``: the points without acceptance, with :math:`e^{-\tau}` on
+      :math:`[0, \tau_\max)` as for ``ignore_time`` (without acceptance the decay time
+      is independent of the point, so this is the exact limit);
     - ``ignore_ps``: the points without acceptance, with the decay times of the accepted
       events.
     """
     if scenario.mode == "none":
-        return bases[NO_ACCEPTANCE]
+        moments = decay_time_moments(config.tau_max, ANALYTIC_ORDER)
+        return bases[NO_ACCEPTANCE].with_decay_time_moments(moments, config.tau_max)
     sample = bases[acceptance_key(scenario.overrides)]
     if scenario.mode == "full":
         return sample
     if scenario.mode == "factorised":
         return sample.with_decay_time_moments(sample.mean_tau_powers, sample.tau_max)
     if scenario.mode == "ignore_time":
-        moments = decay_time_moments(config.tau_max, sample.order)
+        moments = decay_time_moments(config.tau_max, ANALYTIC_ORDER)
         return sample.with_decay_time_moments(moments, config.tau_max)
     flat = bases[NO_ACCEPTANCE]
     return flat.with_decay_time_moments(sample.mean_tau_powers, sample.tau_max)
@@ -345,23 +352,105 @@ def _fit_record(result) -> dict[str, Any]:
         "valid": result.valid,
         "fval": result.fval,
         "nfcn": result.nfcn,
+        "edm": float(result.minuit.fmin.edm),
     }
 
 
+# --- stored toys
+
+TOYS_DIR = "toys"
+
+
+def generation_key(config: StudyConfig) -> dict[str, Any]:
+    """Everything that determines the toys of ``config``: toys with equal keys are equal."""
+    return {
+        "seed": config.seed,
+        "n_per_tag": config.n_per_tag,
+        "truth": dict(config.truth),
+        "tau_max": config.tau_max,
+        "chains": config.chains,
+        "sampler_safety": config.sampler_safety,
+        "sampler_maximum": config.sampler_maximum,
+        "acceptance": config.true_acceptance().to_dict(),
+    }
+
+
+def toy_path(directory: str | Path, index: int) -> Path:
+    return Path(directory) / f"toy_{index:05d}.npz"
+
+
+def save_toy(
+    path: str | Path, index: int, key: dict[str, Any], toys: dict[int, ToySample]
+) -> None:
+    """Write the events, decay times and amplitudes of both tags of toy ``index``."""
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    arrays = {}
+    for tag, toy in toys.items():
+        name = _TAG_NAMES[tag]
+        arrays |= {
+            f"{name}_events": toy.events,
+            f"{name}_tau": toy.tau,
+            f"{name}_amplitude": toy.amplitude,
+            f"{name}_amplitude_bar": toy.amplitude_bar,
+        }
+    meta = json.dumps({"toy": index, "generation": key})
+    tmp = path.with_name(path.name + ".tmp.npz")  # atomic: never a half-written toy
+    np.savez(tmp, meta=np.array(meta), **arrays)
+    tmp.replace(path)
+
+
+def load_toy(path: str | Path, index: int, key: dict[str, Any]) -> dict[int, ToySample]:
+    """Read toy ``index``; raise ``ValueError`` if it was generated with another key."""
+    with np.load(path) as f:
+        meta = json.loads(str(f["meta"]))
+        # through JSON, so that tuples and lists compare equal
+        if meta["toy"] != index or meta["generation"] != json.loads(json.dumps(key)):
+            msg = (
+                f"{path} was generated with other settings than this study"
+                " (seed, size, truth, acceptance or sampler)"
+            )
+            raise ValueError(msg)
+        return {
+            tag: ToySample(
+                tag,
+                f[f"{name}_events"],
+                f[f"{name}_tau"],
+                f[f"{name}_amplitude"],
+                f[f"{name}_amplitude_bar"],
+            )
+            for tag, name in _TAG_NAMES.items()
+        }
+
+
+_TAG_NAMES = {D0: "d0", D0BAR: "d0bar"}
+
+
 def run_toy(index: int) -> dict[str, Any]:
-    """Generate toy ``index`` and fit it with every scenario (uses the state set by :func:`run_study`)."""
+    """Generate (or read) toy ``index`` and fit it with every scenario (uses the state set by :func:`run_study`)."""
     config: StudyConfig = _STATE["config"]
     generator: MixingGenerator = _STATE["generator"]
     acceptance: LHCbAcceptance = _STATE["acceptance"]
     norms: dict[str, NormMoments] = _STATE["norms"]
+    key = _STATE["generation_key"]
     start = time.time()
-    seeds = np.random.SeedSequence([config.seed, 0, index]).spawn(2)
-    data = {
-        tag: RateSample.from_toy(
-            generator.generate(tag, config.n_per_tag, seed, acceptance=acceptance)
-        )
-        for tag, seed in zip((D0, D0BAR), seeds, strict=True)
-    }
+    source = None
+    for directory in _STATE["toy_sources"]:
+        if toy_path(directory, index).exists():
+            source = toy_path(directory, index)
+            break
+    if source is not None:
+        toys = load_toy(source, index, key)
+    else:
+        seeds = np.random.SeedSequence([config.seed, 0, index]).spawn(2)
+        toys = {
+            tag: generator.generate(tag, config.n_per_tag, seed, acceptance=acceptance)
+            for tag, seed in zip((D0, D0BAR), seeds, strict=True)
+        }
+    store = _STATE["store_toys"]
+    if store is not None and (source is None or source.parent != store):
+        save_toy(toy_path(store, index), index, key, toys)
+    data = {tag: RateSample.from_toy(toy) for tag, toy in toys.items()}
     generated = time.time()
     results = {}
     for scenario in config.scenarios:
@@ -376,6 +465,7 @@ def run_toy(index: int) -> dict[str, Any]:
         "toy": index,
         "seed": [config.seed, 0, index],
         "n_per_tag": config.n_per_tag,
+        "toy_source": "generated" if source is None else str(source),
         "time_generate": generated - start,
         "time_fit": time.time() - generated,
         "results": results,
@@ -394,9 +484,20 @@ def run_study(
     outdir: str | Path,
     *,
     workers: int = 1,
+    store_toys: bool = False,
+    toys_from: str | Path | None = None,
     log=print,
 ) -> dict[str, Any]:
     """Run (or resume) the study in ``outdir``; returns the summary.
+
+    - ``store_toys``: write each toy (events, decay times, amplitudes of both tags,
+      about 170 bytes per event) to ``outdir/toys/``.
+    - ``toys_from``: read the toys from another study directory's ``toys/`` instead of
+      generating them, e.g. to fit them with new scenarios. Its toys must have been
+      generated with the same seed, size, truth, acceptance and sampler
+      (:func:`generation_key`); missing toys are generated.
+
+    A toy already in ``outdir/toys/`` is always read rather than generated.
 
     With ``workers > 1`` the toys run in forked processes that share the model and the
     normalisation samples. This needs the NumPy backend: JAX does not survive a fork.
@@ -409,13 +510,21 @@ def run_study(
     (outdir / "config.json").write_text(json.dumps(config.to_dict(), indent=2))
     log(f"Building the model ({config.backend})")
     model = AmplitudeModel(chains=config.chains, backend=config.backend)
-    sampler = AmplitudeSampler(model, safety=config.sampler_safety)
+    sampler = AmplitudeSampler(
+        model, safety=config.sampler_safety, maximum=config.sampler_maximum
+    )
     generator = MixingGenerator(sampler, config.parameters, tau_max=config.tau_max)
     _STATE.update(
         model=model,
         config=config,
         generator=generator,
         acceptance=LHCbAcceptance(config.true_acceptance()),
+        generation_key=generation_key(config),
+        store_toys=outdir / TOYS_DIR if store_toys else None,
+        toy_sources=[
+            *([Path(toys_from) / TOYS_DIR] if toys_from is not None else []),
+            outdir / TOYS_DIR,
+        ],
     )
     norm_dir = outdir / "norm"
     k = config.norm_check_parts

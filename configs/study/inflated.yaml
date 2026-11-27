@@ -1,14 +1,17 @@
 # As default.yaml, with inflated mixing and CP violation, to check whether the biases
-# depend on the true values (Phase 8).
+# depend on the true values (Phase 8, decision C16).
+# Override magnitudes: decision C14. Normalisation size: C15.
 name: inflated
 truth: {x_cp_mix: 0.03, y_cp_mix: 0.025, dx_mix: 0.005, dy_mix: -0.003}
 n_per_tag: 100000
-n_norm: 2000000
+n_norm: 40000000
 n_toys: 100
 seed: 20261126
 acceptance: ../acceptance/base.yaml
 backend: numpy
 norm_method: peaked
+# |A|^2/r ceiling of the toy generator: the largest of 4e7 candidates is 4.42 (Phase 8)
+sampler_maximum: 6.0
 scenarios:
   - {name: closure, mode: full}
   - {name: factorised, mode: factorised}
