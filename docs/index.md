@@ -55,9 +55,17 @@ The full plan is in the [study plan](TOY_STUDY_PLAN.md).
 
 ```bash
 uv sync                                   # add --extra cuda for the GPU
+.venv/bin/d02hhhh-toys setup /path/to/large/disk/D02hhhh_toys/output   # once, see below
 .venv/bin/python -m pytest                # add -m "slow or not slow" for full-model tests
 .venv/bin/d02hhhh-toys study configs/study/smoke.yaml --out results/smoke --workers 8
 .venv/bin/d02hhhh-toys summarise results/smoke
 ```
+
+- **The output folder:** `setup` creates the folder and makes `results/` a symbolic
+  link to it, so that the large outputs (stored toys: 3.4 GB per study) stay out of the
+  repository. It never deletes data:
+    - if `results/` already holds outputs, add `--move` to move them into the folder;
+    - if it links to another folder, add `--force` to replace the link (the old folder
+      is kept).
 
 To build this site locally, run `uv run --group docs mkdocs serve`.

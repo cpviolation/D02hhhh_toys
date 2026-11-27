@@ -1,4 +1,4 @@
-"""Command-line entry point: ``d02hhhh-toys study CONFIG --out DIR`` and ``d02hhhh-toys summarise DIR``."""
+"""Command-line entry point: ``d02hhhh-toys setup OUTPUT``, ``d02hhhh-toys study CONFIG --out DIR`` and ``d02hhhh-toys summarise DIR``."""
 
 from __future__ import annotations
 
@@ -32,6 +32,17 @@ def main(argv: list[str] | None = None) -> int:
         metavar="DIR",
         help="read the toys from DIR/toys/ (a study with the same generation settings)",
     )
+    setup = commands.add_parser(
+        "setup", help="first-time setup: link results/ to an output folder of choice"
+    )
+    setup.add_argument("output", help="folder for the outputs (created if missing)")
+    setup.add_argument("--link", default="results", help="the link (default: results)")
+    setup.add_argument(
+        "--move", action="store_true", help="move an existing results/ into OUTPUT"
+    )
+    setup.add_argument(
+        "--force", action="store_true", help="replace a link to another folder"
+    )
     summary = commands.add_parser("summarise", help="rewrite summary.json and plots")
     summary.add_argument("out", help="study directory")
     args = parser.parse_args(argv)
@@ -56,6 +67,18 @@ def main(argv: list[str] | None = None) -> int:
             toys_from=args.toys_from,
             log=lambda m: print(m, flush=True),
         )
+        return 0
+    if args.command == "setup":
+        from d02hhhh_toys.workspace import SetupError, link_output
+
+        try:
+            target = link_output(
+                args.output, args.link, move=args.move, force=args.force
+            )
+        except SetupError as error:
+            print(f"setup: {error}", file=sys.stderr)
+            return 1
+        print(f"{args.link} -> {target}")
         return 0
     if args.command == "summarise":
         from d02hhhh_toys.study import summarise

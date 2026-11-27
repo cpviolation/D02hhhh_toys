@@ -22,10 +22,10 @@
   Each file records how its toy was generated: seed, size, truth, acceptance and
   sampler. A study with other settings refuses it. Toys missing from `<dir>` are
   generated. A rerun in the same `<out>` always reads the toys it stored.
-- **Where the output goes:** `results/` is a symbolic link to
-  `/data01/gr1/lhcb/mmartinelli/D02hhhh_toys/output`, outside the repository (it is
-  ignored by git). In a new clone, create it again with
-  `ln -s /data01/gr1/lhcb/mmartinelli/D02hhhh_toys/output results`.
+- **Where the output goes:** `results/` is a symbolic link to a folder outside the
+  repository, made once with `.venv/bin/d02hhhh-toys setup <folder>` (see the
+  [quick start](../index.md#quick-start)). Here it is
+  `/data01/gr1/lhcb/mmartinelli/D02hhhh_toys/output`.
 - **Parallelism:** workers are forked processes that share the model and the
   normalisation samples. They use the NumPy backend, one BLAS thread each. JAX cannot
   be forked: `backend: jax` needs `--workers 1`.

@@ -10,6 +10,7 @@ in a time-dependent D0 → K⁺K⁻π⁺π⁻ amplitude fit.
 
 ```bash
 uv sync
+.venv/bin/d02hhhh-toys setup /path/to/large/disk/D02hhhh_toys/output   # once: results/ -> there
 .venv/bin/python -m pytest
 .venv/bin/d02hhhh-toys study configs/study/smoke.yaml --out results/smoke --workers 8
 ```
