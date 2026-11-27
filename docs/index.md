@@ -23,7 +23,7 @@ The amplitude model is the AmpGen model of JHEP 02 (2019) 126, taken from
 | 6 | Likelihood with external normalisation | done | [normalisation](notes/normalisation.md) |
 | 7 | Scenarios and study driver, documentation site | done ([#1](https://github.com/cpviolation/D02hhhh_toys/pull/1), [#2](https://github.com/cpviolation/D02hhhh_toys/pull/2)) | [study](notes/study.md) |
 | 7b | Normalisation as τ moments; variance budget of v | done ([#3](https://github.com/cpviolation/D02hhhh_toys/pull/3)) | [moments and v](notes/moments.md) |
-| 8 | Validation and first results | in review ([#4](https://github.com/cpviolation/D02hhhh_toys/pull/4)) | [results](notes/results.md) |
+| 8 | Validation and first results | done ([#4](https://github.com/cpviolation/D02hhhh_toys/pull/4)) | [results](notes/results.md) |
 
 The full plan is in the [study plan](TOY_STUDY_PLAN.md).
 [Decisions](decisions.md) lists where the code departs from it.
