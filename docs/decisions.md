@@ -33,6 +33,9 @@ None at the moment.
 | C14 | 2026-11-26 | Sizes of the data/simulation differences (was P1, option A): IP resolution scale 1.05 and 0.95; two-track `track_ipchi2_min` 4 → 4.5; `production.pt_scale` 2.5 → 2.3 GeV; `tracking.width` 1.5 → 2.0 GeV. Shifts are assumed linear and can be rescaled. | `configs/study/default.yaml`, `inflated*.yaml` |
 | C15 | 2026-11-26 | Normalisation size (was P2, option A): 10⁵ events per tag, n = 4·10⁷, so σ_norm ≈ 0.10σ (y_CP), 0.09σ (Δx). | `n_norm` in `configs/study/*.yaml`, [moments](notes/moments.md) |
 | C16 | 2026-11-26 | Inflated cross-check (was P3, option C): run both `inflated.yaml` (x_CP = 30e-3, y_CP = 25e-3, Δx = 5e-3, Δy = −3e-3) and `inflated_no_cpv.yaml` (same, with Δx = Δy = 0). | `configs/study/inflated*.yaml` |
+| C17 | 2026-11-27 | Charge asymmetries to model (was P4, option B): kaon and pion detection asymmetries, as per-charge factors 1 ± A_h(p) on the tracking efficiency. No flavour-tag or production asymmetry for now. | `ChargeAsymmetry` in `acceptance.py` |
+| C18 | 2026-11-27 | Form and size (was P5, option A): A_h(p) = (ε(h⁺) − ε(h⁻))/(ε(h⁺) + ε(h⁻)) = a_h + b_h/p, with a_K = +0.5%, b_K = +5% GeV, a_π = 0, b_π = +0.5% GeV. Toy values, to be tuned on Run 3 calibration samples. | `configs/acceptance/charge_asymmetric.yaml` |
+| C19 | 2026-11-27 | Scenarios (was P6, option A): closure, `no_asymmetry`, `kaon_±20%` (b_K × 1.2, 0.8), `kaon_constant` (A_K = 1% constant, no pion asymmetry), `no_pion_asymmetry`; for the realistic truth and the inflated truth. | `configs/study/charge_asymmetry*.yaml` |
 
 ## Corrections to the plan
 

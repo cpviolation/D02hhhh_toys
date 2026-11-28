@@ -8,7 +8,7 @@ The amplitude model is the AmpGen model of JHEP 02 (2019) 126, taken from
 [aman-examples](https://github.com/cpviolation/aman-examples) at tag `0.1.0`.
 
 !!! success "No open decisions"
-    P1–P3 were confirmed on 2026-11-26 as C14–C16. See [Decisions](decisions.md).
+    P4–P6 were confirmed on 2026-11-27 as C17–C19. See [Decisions](decisions.md).
 
 ## Status
 
@@ -24,6 +24,7 @@ The amplitude model is the AmpGen model of JHEP 02 (2019) 126, taken from
 | 7 | Scenarios and study driver, documentation site | done ([#1](https://github.com/cpviolation/D02hhhh_toys/pull/1), [#2](https://github.com/cpviolation/D02hhhh_toys/pull/2)) | [study](notes/study.md) |
 | 7b | Normalisation as τ moments; variance budget of v | done ([#3](https://github.com/cpviolation/D02hhhh_toys/pull/3)) | [moments and v](notes/moments.md) |
 | 8 | Validation and first results | done ([#4](https://github.com/cpviolation/D02hhhh_toys/pull/4)) | [results](notes/results.md) |
+| 9 | Charge-asymmetric acceptance | done ([#6](https://github.com/cpviolation/D02hhhh_toys/pull/6)) | [charge asymmetry](notes/charge_asymmetry.md) |
 
 The full plan is in the [study plan](TOY_STUDY_PLAN.md).
 [Decisions](decisions.md) lists where the code departs from it.
@@ -50,6 +51,13 @@ The full plan is in the [study plan](TOY_STUDY_PLAN.md).
       Δx (≤ 0.3σ at Δx = 5·10⁻³);
     - factorising the acceptance into ε(τ)ε(p) shifts y_CP by 8.5σ, and ignoring the
       time acceptance by about 300σ.
+- **Phase 9 results** ([charge asymmetry](notes/charge_asymmetry.md)): a kaon tracking
+  asymmetry A_K = 0.005 + 0.05 GeV/p, and a smaller pion one, fake almost no CP
+  violation:
+    - only the momentum-dependent part matters, because a constant asymmetry cancels
+      between the two charges of each event;
+    - ignoring the asymmetries moves Δy by 0.012–0.016σ (2·10⁻⁵), linearly in b_K;
+    - Δx, x_CP and y_CP move by less than the normalisation noise (≤ 0.025σ).
 
 ## Quick start
 

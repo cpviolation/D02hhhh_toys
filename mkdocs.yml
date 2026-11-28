@@ -18,6 +18,7 @@ nav:
       - "Phase 7: study driver": notes/study.md
       - "Phase 7b: moments and v": notes/moments.md
       - "Phase 8: results": notes/results.md
+      - "Phase 9: charge asymmetry": notes/charge_asymmetry.md
 
 theme:
   name: material

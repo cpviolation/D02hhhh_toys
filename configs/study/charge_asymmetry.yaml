@@ -1,0 +1,27 @@
+# Phase 9: charge-asymmetric acceptance (decisions C17-C19), realistic truth with
+# no CP violation, so that any Δx, Δy is fake CP violation. Run with --store-toys.
+name: charge_asymmetry
+truth: {x_cp_mix: 0.004, y_cp_mix: 0.006, dx_mix: 0.0, dy_mix: 0.0}
+n_per_tag: 100000
+n_norm: 40000000
+n_toys: 100
+seed: 20261128
+acceptance: ../acceptance/charge_asymmetric.yaml
+backend: numpy
+norm_method: peaked
+sampler_maximum: 6.0
+scenarios:
+  - {name: closure, mode: full}
+  # the analyst's model of the asymmetries differs from the truth
+  - name: no_asymmetry
+    mode: full
+    overrides: {charge_asymmetry: {kaon_a: 0.0, kaon_b_gev: 0.0, pion_a: 0.0, pion_b_gev: 0.0}}
+  - {name: kaon_+20%, mode: full, overrides: {charge_asymmetry.kaon_b_gev: 0.06}}
+  - {name: kaon_-20%, mode: full, overrides: {charge_asymmetry.kaon_b_gev: 0.04}}
+  # constant A_K (its value at 10 GeV), no pion asymmetry: must fit like no_asymmetry
+  - name: kaon_constant
+    mode: full
+    overrides: {charge_asymmetry: {kaon_a: 0.01, kaon_b_gev: 0.0, pion_a: 0.0, pion_b_gev: 0.0}}
+  - name: no_pion_asymmetry
+    mode: full
+    overrides: {charge_asymmetry: {pion_a: 0.0, pion_b_gev: 0.0}}

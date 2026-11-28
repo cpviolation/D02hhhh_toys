@@ -8,3 +8,4 @@ __pycache__/
 .ruff_cache/
 src/d02hhhh_toys/version.py
 site/
+.claude/settings.local.json
